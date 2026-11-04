@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -186,9 +187,14 @@ type websocketFrames struct {
 	closeOnce     sync.Once
 	closeErr      error
 	writeDeadline time.Time
+	reading       atomic.Bool
 }
 
+// closeDrainWindow bounds how long Close waits for frames nobody has read yet.
+const closeDrainWindow = 500 * time.Millisecond
+
 func (frames *websocketFrames) ReadFrame(ctx context.Context, limit int) (bool, []byte, error) {
+	frames.reading.Store(true)
 	frames.connection.SetReadLimit(int64(limit))
 	kind, payload, err := frames.connection.Read(ctx)
 	return kind == websocket.MessageBinary, payload, err
@@ -217,10 +223,21 @@ func (frames *websocketFrames) Close() error {
 		if frames.stop != nil {
 			frames.stop()
 		}
-		// An abrupt close with unread client frames resets the connection, and the
-		// browser then discards an error frame it has not delivered yet.
-		frames.closeErr = frames.connection.Close(websocket.StatusNormalClosure, "")
-		_ = frames.connection.CloseNow()
+		// The browser sends a resize as soon as the socket opens. Closing with that
+		// frame unread resets the connection, and the browser then discards an error
+		// frame it has not delivered yet. Conn.Close would drain it too, but it can
+		// block without limit on a peer that stops halfway through a frame, while
+		// session revocation holds the authentication lock.
+		if !frames.reading.Load() {
+			drain, cancel := context.WithTimeout(context.Background(), closeDrainWindow)
+			for {
+				if _, _, err := frames.connection.Read(drain); err != nil {
+					break
+				}
+			}
+			cancel()
+		}
+		frames.closeErr = frames.connection.CloseNow()
 		if frames.done != nil {
 			<-frames.done
 		}

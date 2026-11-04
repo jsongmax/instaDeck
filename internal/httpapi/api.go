@@ -61,6 +61,8 @@ type API struct {
 	authMutex    sync.Mutex
 	// reauthOff is inverted so the zero value keeps the protection on.
 	reauthOff atomic.Bool
+	// settingsMutex keeps a switch's stored value and its effect in step.
+	settingsMutex sync.Mutex
 }
 
 type contextKey int

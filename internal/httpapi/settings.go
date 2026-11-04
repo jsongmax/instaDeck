@@ -98,6 +98,8 @@ func (api *API) changeSettings(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "settings.change", "", "") {
 		return
 	}
+	api.settingsMutex.Lock()
+	defer api.settingsMutex.Unlock()
 	for _, change := range changes {
 		if change.value == nil {
 			continue

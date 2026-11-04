@@ -17,6 +17,7 @@ import type { ITheme } from '@xterm/xterm'
 import { getMachineStateMeta } from '../api/errors'
 import type { Account, ActionRecord, FleetResponse, SessionInfo } from '../api/types'
 import App from '../App'
+import { machineQuotaFull } from '../hooks/useFleetData'
 import {
   MAX_TERMINAL_FRAME_BYTES,
   chunkTerminalInput,
@@ -593,6 +594,27 @@ describe('InstaDeck Frontend Verification Suite', () => {
 
     await user.click(cell)
     expect(await screen.findByRole('button', { name: '删除机器' })).toBeInTheDocument()
+  })
+
+  it('3e. 真实机器行出现后不再显示创建占位行', async () => {
+    renderApp()
+    await screen.findByRole('button', { name: '启动：ci-worker' })
+    act(() => {
+      useAppStore.getState().addCreateRecord('act-dup', 'ci-worker', 'cred-1')
+    })
+    expect(screen.getAllByText('ci-worker')).toHaveLength(1)
+    act(() => {
+      useAppStore.getState().removeCreateRecord('act-dup')
+    })
+  })
+
+  it('3f. 配额判断：未列入 unlimited 的 0 表示不允许，缺少列表时不判满', () => {
+    expect(machineQuotaFull({ maxMachines: 0, unlimited: [] }, 0)).toBe(true)
+    expect(machineQuotaFull({ maxMachines: 0, unlimited: ['maxMachines'] }, 5)).toBe(false)
+    expect(machineQuotaFull({ maxMachines: 0 }, 5)).toBe(false)
+    expect(machineQuotaFull({ maxMachines: 1, unlimited: [] }, 1)).toBe(true)
+    expect(machineQuotaFull({ maxMachines: 2, unlimited: [] }, 1)).toBe(false)
+    expect(machineQuotaFull(undefined, 9)).toBe(false)
   })
 
   it('4. 401 不卸载工作台（保留已输入内容和终端，弹出登录层）', async () => {

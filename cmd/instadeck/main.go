@@ -93,7 +93,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	if err != nil {
 		return err
 	}
-	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{Events: store})
+	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{})
 	if err != nil {
 		return err
 	}

@@ -104,6 +104,23 @@ func (s *Store) UpdateAction(ctx context.Context, action Action) error {
 	return requireOne(s.writer.ExecContext(ctx, "UPDATE actions SET upstream_operation_id=?,state=?,phase=?,error_code=?,updated_at=?,upstream_state=?,attempts=?,next_attempt_at=? WHERE id=?", action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.UpdatedAt.UnixMilli(), action.UpstreamState, action.Attempts, action.NextAttemptAt.UnixMilli(), action.ID))
 }
 
+// FinishAction stores a final action state and its audit outcome in one transaction.
+func (s *Store) FinishAction(ctx context.Context, action Action, event audit.Event) error {
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, "UPDATE actions SET upstream_operation_id=?,state=?,phase=?,error_code=?,updated_at=?,upstream_state=?,attempts=?,next_attempt_at=? WHERE id=?", action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.UpdatedAt.UnixMilli(), action.UpstreamState, action.Attempts, action.NextAttemptAt.UnixMilli(), action.ID)
+		if err != nil {
+			return err
+		}
+		if count, err := result.RowsAffected(); err != nil {
+			return err
+		} else if count != 1 {
+			return ErrNotFound
+		}
+		_, err = tx.ExecContext(ctx, "INSERT INTO audit_events (time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail) VALUES (?,?,?,?,?,?,?,?,?,?)", event.Time.UnixMilli(), event.Type, event.SubjectID, event.CredentialID, event.MachineID, event.ActionID, event.Result, event.RequestID, event.SourceAddress, event.Detail())
+		return err
+	})
+}
+
 func (s *Store) actions(ctx context.Context, where string, args ...any) ([]Action, error) {
 	rows, err := s.reader.QueryContext(ctx, "SELECT id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at,method,path,digest,org_id,credential_version,upstream_state,attempts,next_attempt_at FROM actions "+where+" ORDER BY created_at,id", args...)
 	if err != nil {

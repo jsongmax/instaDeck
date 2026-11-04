@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/coder/websocket"
 	"instadeck/internal/config"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -149,7 +150,45 @@ func TestLastFrameSurvivesUnreadClientData(t *testing.T) {
 	if err != nil || !strings.Contains(string(payload), "address_blocked") {
 		t.Fatal(string(payload), err)
 	}
-	if _, _, err = conn.Read(ctx); websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+	if _, _, err = conn.Read(ctx); err == nil {
+		t.Fatal("connection should close after the last frame")
+	}
+}
+
+// A peer that stops halfway through a frame must not hold up session revocation,
+// which waits for this close while holding the authentication lock.
+func TestCloseIsBoundedWhenPeerStallsMidFrame(t *testing.T) {
+	closed := make(chan time.Duration, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+		started := time.Now()
+		_ = (&websocketFrames{connection: conn}).Close()
+		closed <- time.Since(started)
+	}))
+	defer server.Close()
+	raw, err := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer raw.Close()
+	handshake := "GET / HTTP/1.1\r\nHost: test\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+	if _, err = raw.Write([]byte(handshake)); err != nil {
+		t.Fatal(err)
+	}
+	// A masked binary frame header that declares one payload byte and never sends it.
+	if _, err = raw.Write([]byte{0x82, 0x81, 1, 2, 3, 4}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case elapsed := <-closed:
+		if elapsed > 2*time.Second {
+			t.Fatalf("close took %v", elapsed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("close blocked on the stalled peer")
 	}
 }

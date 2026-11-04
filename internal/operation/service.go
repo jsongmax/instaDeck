@@ -282,19 +282,34 @@ func (service *Service) Stop() {
 	service.mutex.Unlock()
 }
 
+// saveAttempts bounds retries of a state write. A lost write would otherwise stop
+// tracking the action until the next restart.
+const saveAttempts = 4
+
 func (service *Service) save(ctx context.Context, action *Action) bool {
 	action.UpdatedAt = service.options.Clock.Now().UTC()
-	if service.repository.UpdateAction(ctx, *action) != nil {
-		return false
+	final := action.State == "completed" || action.State == "unknown"
+	for attempt := 0; attempt < saveAttempts; attempt++ {
+		var err error
+		if final {
+			err = service.repository.FinishAction(ctx, *action, outcomeEvent(*action))
+		} else {
+			err = service.repository.UpdateAction(ctx, *action)
+		}
+		if err == nil {
+			return true
+		}
+		if ctx.Err() != nil || attempt == saveAttempts-1 {
+			return false
+		}
+		if service.options.Clock.Wait(ctx, time.Second<<attempt) != nil {
+			return false
+		}
 	}
-	service.recordOutcome(ctx, *action)
-	return true
+	return false
 }
 
-func (service *Service) recordOutcome(ctx context.Context, action Action) {
-	if service.options.Events == nil || action.State != "completed" && action.State != "unknown" {
-		return
-	}
+func outcomeEvent(action Action) audit.Event {
 	result := "success"
 	if action.State == "unknown" {
 		result = "unknown"
@@ -303,8 +318,7 @@ func (service *Service) recordOutcome(ctx context.Context, action Action) {
 	}
 	event := audit.Event{Time: action.UpdatedAt, Type: "operation.result", CredentialID: action.CredentialID, MachineID: action.MachineID, ActionID: action.ID, Result: result, RequestID: action.ClientRequestID}
 	event.SetDetail(action.ErrorCode)
-	// The action state is already durable, so a failed audit write must not undo it.
-	_ = service.options.Events.WriteEvent(ctx, event)
+	return event
 }
 
 func (service *Service) unknown(ctx context.Context, action *Action, code string) {

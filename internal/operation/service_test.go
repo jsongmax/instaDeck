@@ -532,7 +532,10 @@ type rejectingRepository struct {
 }
 
 func (repository rejectingRepository) UpdateAction(ctx context.Context, action operation.Action) error {
-	repository.attempted <- struct{}{}
+	select {
+	case repository.attempted <- struct{}{}:
+	default:
+	}
 	return errors.New("crash before submission")
 }
 
@@ -571,18 +574,6 @@ func waitForCompletion(t *testing.T, fixture *fixture) {
 	t.Fatal("action did not complete after cache invalidation")
 }
 
-type outcomeRecorder struct {
-	mutex  sync.Mutex
-	events []audit.Event
-}
-
-func (recorder *outcomeRecorder) WriteEvent(_ context.Context, event audit.Event) error {
-	recorder.mutex.Lock()
-	defer recorder.mutex.Unlock()
-	recorder.events = append(recorder.events, event)
-	return nil
-}
-
 // A rejected create has no machine row, so the audit outcome is its only record.
 func TestOutcomeIsAudited(t *testing.T) {
 	for _, test := range []struct {
@@ -593,8 +584,7 @@ func TestOutcomeIsAudited(t *testing.T) {
 		{name: "rejected", result: "failure", detail: "template_not_allowed", rejection: &instabox.APIError{StatusCode: 403, Code: "template_not_allowed"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			recorder := &outcomeRecorder{}
-			fixture := setup(t, operation.Options{Events: recorder})
+			fixture := setup(t, operation.Options{})
 			if test.rejection != nil {
 				fixture.client.submit = func(context.Context, request) (instabox.Operation, error) {
 					return instabox.Operation{}, test.rejection
@@ -604,17 +594,53 @@ func TestOutcomeIsAudited(t *testing.T) {
 			start(t, fixture)
 			waitForAction(t, fixture, action.ID, func(value operation.Action) bool { return value.State == "completed" })
 			fixture.service.Stop()
-			recorder.mutex.Lock()
-			defer recorder.mutex.Unlock()
-			if len(recorder.events) != 1 {
-				t.Fatalf("events: %d", len(recorder.events))
+			records, err := fixture.store.ReadAuditEvents(context.Background(), 0, 100)
+			if err != nil {
+				t.Fatal(err)
 			}
-			event := recorder.events[0]
-			if event.Type != "operation.result" || event.Result != test.result || event.Detail() != test.detail || event.ActionID != action.ID {
-				t.Fatalf("%+v", event)
+			count := 0
+			for _, record := range records {
+				if record.Event.Type != "operation.result" {
+					continue
+				}
+				count++
+				if record.Event.Result != test.result || record.Event.Detail() != test.detail || record.Event.ActionID != action.ID {
+					t.Fatalf("%+v", record.Event)
+				}
+			}
+			if count != 1 {
+				t.Fatalf("outcome events: %d", count)
 			}
 		})
 	}
+}
+
+type flakyRepository struct {
+	*sqlite.Store
+	failures atomic.Int32
+}
+
+func (repository *flakyRepository) FinishAction(ctx context.Context, action operation.Action, event audit.Event) error {
+	if repository.failures.Add(-1) >= 0 {
+		return errors.New("temporary write failure")
+	}
+	return repository.Store.FinishAction(ctx, action, event)
+}
+
+func TestTemporaryWriteFailureKeepsTracking(t *testing.T) {
+	fixture := setup(t, operation.Options{})
+	repository := &flakyRepository{Store: fixture.store}
+	repository.failures.Store(2)
+	service, err := operation.New(repository, fixture.accounts, visibility{}, fixture.cache, operation.Options{Clock: fixture.clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := submit(t, fixture, intent("one"))
+	if err = service.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForAction(t, fixture, action.ID, func(value operation.Action) bool { return value.State == "completed" })
+	service.Stop()
 }
 
 func TestQuotaExceededIsNotRetried(t *testing.T) {

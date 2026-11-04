@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"instadeck/internal/httpapi"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -81,5 +82,31 @@ func TestSecuritySwitches(t *testing.T) {
 	}
 	if response = fixture.request("POST", "/api/v1/accounts", `{}`, cookie, csrf, origin); response.Code != 403 {
 		t.Fatal("protection did not come back", response.Code)
+	}
+}
+
+// Requests that race on one switch must leave its stored value and effect equal.
+func TestConcurrentSwitchChangesStayConsistent(t *testing.T) {
+	fixture := newFixture(t, false)
+	cookie, csrf := fixture.login(t)
+	origin := fixture.dependencies.Config.Origin
+	var workers sync.WaitGroup
+	for index := 0; index < 40; index++ {
+		workers.Add(1)
+		go func(on bool) {
+			defer workers.Done()
+			body := `{"requireReauth":false}`
+			if on {
+				body = `{"requireReauth":true}`
+			}
+			fixture.request("PATCH", "/api/v1/settings", body, cookie, csrf, origin)
+		}(index%2 == 0)
+	}
+	workers.Wait()
+	stored := strings.Contains(fixture.request("GET", "/api/v1/settings", "", cookie, "", "").Body.String(), `"requireReauth":true`)
+	fixture.clock.Add(301)
+	response := fixture.request("POST", "/api/v1/accounts", `{}`, cookie, csrf, origin)
+	if enforced := response.Code == 403; enforced != stored {
+		t.Fatalf("stored requireReauth=%v but enforced=%v (status %d)", stored, enforced, response.Code)
 	}
 }

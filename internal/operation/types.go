@@ -35,6 +35,7 @@ type Repository interface {
 	ActionByID(context.Context, string) (Action, error)
 	CreateActionIntent(context.Context, Action, audit.Event) error
 	UpdateAction(context.Context, Action) error
+	FinishAction(context.Context, Action, audit.Event) error
 	ListUnfinishedActions(context.Context) ([]Action, error)
 }
 
@@ -69,8 +70,6 @@ type Options struct {
 	BaseDelay                    time.Duration
 	Clock                        Clock
 	Audit                        Audit
-	// Events receives the outcome of each action, which the intent cannot record.
-	Events audit.Writer
 }
 
 // Failure contains only a fixed public code.

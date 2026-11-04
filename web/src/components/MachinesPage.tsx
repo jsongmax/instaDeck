@@ -189,7 +189,12 @@ export function MachinesPage({
   const suspendedCount = scopedMachines.filter((m) => m.state === 'suspended').length
   const stoppedCount = scopedMachines.filter((m) => m.state === 'stopped').length
   const scopedCreates = Object.values(createRecords).filter(
-    (r) => !filterAccountId || r.credentialId === filterAccountId,
+    (r) =>
+      (!filterAccountId || r.credentialId === filterAccountId) &&
+      (r.status === 'failed' ||
+        !scopedMachines.some(
+          (m) => m.name === r.name && m.sources.some((s) => s.credentialId === r.credentialId),
+        )),
   )
   const runningCreates = scopedCreates.filter((r) => r.status === 'running').length
   const busyCount = scopedMachines.filter((m) => isMachineBusy(m)).length + runningCreates

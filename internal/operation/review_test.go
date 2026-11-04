@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"instadeck/internal/account"
+	"instadeck/internal/audit"
 	"instadeck/internal/instabox"
 	"instadeck/internal/operation"
 	"instadeck/internal/store/sqlite"
@@ -140,8 +141,20 @@ func TestConcurrentSameRequestCreatesAndSendsOnce(t *testing.T) {
 		t.Fatal("intent sent more than once")
 	}
 	events, err := fixture.store.ReadAuditEvents(context.Background(), 0, 100)
-	if err != nil || len(events) != 1 {
-		t.Fatal("intent audit duplicated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intents, outcomes := 0, 0
+	for _, record := range events {
+		switch record.Event.Type {
+		case "operation.intent":
+			intents++
+		case "operation.result":
+			outcomes++
+		}
+	}
+	if intents != 1 || outcomes != 1 {
+		t.Fatalf("audit duplicated: intents=%d outcomes=%d", intents, outcomes)
 	}
 }
 
@@ -292,6 +305,11 @@ type observingRepository struct {
 func (repository *observingRepository) UpdateAction(ctx context.Context, action operation.Action) error {
 	repository.updates.Add(1)
 	return repository.Store.UpdateAction(ctx, action)
+}
+
+func (repository *observingRepository) FinishAction(ctx context.Context, action operation.Action, event audit.Event) error {
+	repository.updates.Add(1)
+	return repository.Store.FinishAction(ctx, action, event)
 }
 
 func TestShortPollsWaitAndUnchangedProgressDoesNotWrite(t *testing.T) {

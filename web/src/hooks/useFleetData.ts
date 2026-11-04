@@ -31,8 +31,7 @@ export function computeAccountQuota(
   const isUnlimitedMachines =
     unlimitedList.includes('maxMachines') || unlimitedList.includes('machines')
   const maxMachines = limits ? limits.maxMachines : 0
-  // Never treat 0 as unlimited, and never treat 0 as quota full unless maxMachines > 0
-  const isQuotaFull = !isUnlimitedMachines && maxMachines > 0 && used >= maxMachines
+  const isQuotaFull = machineQuotaFull(limits, used)
 
   return {
     ...account,
@@ -44,6 +43,19 @@ export function computeAccountQuota(
     isUnlimitedMachines,
     isQuotaFull,
   }
+}
+
+// A 0 not listed in `unlimited` means none allowed. Servers that omit the list
+// leave a 0 ambiguous, so it does not block anything there.
+export function machineQuotaFull(
+  limits: { maxMachines: number; unlimited?: string[] | null } | undefined,
+  used: number,
+): boolean {
+  if (!limits) return false
+  const listed = limits.unlimited
+  if (listed?.includes('maxMachines') || listed?.includes('machines')) return false
+  if (limits.maxMachines === 0 && !Array.isArray(listed)) return false
+  return used >= limits.maxMachines
 }
 
 export function useFleetData() {
