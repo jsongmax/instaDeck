@@ -54,12 +54,13 @@ type Options struct {
 	ChallengeAttempts                             int
 }
 type Service struct {
-	repo    Repository
-	cipher  Cipher
-	now     func() time.Time
-	options Options
-	dummy   PasswordHash
-	limiter *Limiter
+	secondFactor secondFactorBudget
+	repo         Repository
+	cipher       Cipher
+	now          func() time.Time
+	options      Options
+	dummy        PasswordHash
+	limiter      *Limiter
 }
 
 func New(repo Repository, cipher Cipher, now func() time.Time, options Options, limiter *Limiter) (*Service, error) {
@@ -76,7 +77,7 @@ func New(repo Repository, cipher Cipher, now func() time.Time, options Options, 
 	if e != nil {
 		return nil, e
 	}
-	return &Service{repo, cipher, now, options, d, limiter}, nil
+	return &Service{repo: repo, cipher: cipher, now: now, options: options, dummy: d, limiter: limiter}, nil
 }
 func totpAAD() []byte { return []byte("instadeck:administrator:totp:v1") }
 func (s *Service) Initialize(ctx context.Context, id, name, password string, secret []byte) ([]string, error) {
@@ -138,7 +139,7 @@ func (s *Service) newSession(id string, now time.Time) (Session, string, error) 
 	}
 	return Session{Hash: TokenHash(token), AdministratorID: id, CSRFSecret: csrf, CreatedAt: now, LastSeen: now, AuthenticatedAt: now}, token, nil
 }
-func (s *Service) Complete(ctx context.Context, challenge, code string, recovery bool) (string, error) {
+func (s *Service) Complete(ctx context.Context, challenge, code string, recovery bool) (token string, err error) {
 	now := s.now()
 	h := TokenHash(challenge)
 	c, e := s.repo.AtomicTakeChallenge(ctx, h, now)
@@ -149,6 +150,18 @@ func (s *Service) Complete(ctx context.Context, challenge, code string, recovery
 	if e != nil {
 		return "", fmt.Errorf("authentication failed")
 	}
+	s.secondFactor.mutex.Lock()
+	if !s.secondFactor.allow(s.now()) {
+		s.secondFactor.mutex.Unlock()
+		return "", fmt.Errorf("second factor rate limited")
+	}
+	defer func() {
+		if err != nil {
+			s.secondFactor.fail(s.now())
+		}
+		s.secondFactor.mutex.Unlock()
+	}()
+	now = s.now()
 	session, token, e := s.newSession(a.ID, now)
 	if e != nil {
 		return "", e
@@ -191,7 +204,7 @@ func (s *Service) RecentlyAuthenticated(session Session) bool {
 	age := s.now().Sub(session.AuthenticatedAt)
 	return age >= 0 && age < s.options.RecentTTL
 }
-func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip string) (string, error) {
+func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip string) (replacementToken string, err error) {
 	if !s.limiter.Allow(ip, s.now()) {
 		return "", fmt.Errorf("login rate limited")
 	}
@@ -206,6 +219,17 @@ func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip 
 	if !VerifyPassword(a.Password, password) {
 		return "", fmt.Errorf("authentication failed")
 	}
+	s.secondFactor.mutex.Lock()
+	if !s.secondFactor.allow(s.now()) {
+		s.secondFactor.mutex.Unlock()
+		return "", fmt.Errorf("second factor rate limited")
+	}
+	defer func() {
+		if err != nil {
+			s.secondFactor.fail(s.now())
+		}
+		s.secondFactor.mutex.Unlock()
+	}()
 	secret, e := s.cipher.Decrypt(a.TOTP, totpAAD())
 	if e != nil {
 		return "", fmt.Errorf("authentication failed")

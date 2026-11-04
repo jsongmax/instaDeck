@@ -196,6 +196,10 @@ func (service *Service) Submit(ctx context.Context, intent Intent) (Action, erro
 			return Action{}, &Failure{Code: "audit_unavailable"}
 		}
 	}
+	event.SubjectID = intent.AdministratorID
+	if intent.RequestID != "" {
+		event.RequestID = intent.RequestID
+	}
 	if err = service.repository.CreateActionIntent(ctx, action, event); err != nil {
 		existing, found, lookupErr := service.repository.FindAction(ctx, intent.ClientRequestID)
 		if lookupErr == nil && found {

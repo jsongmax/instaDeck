@@ -1,0 +1,16 @@
+panel.example.invalid {
+	reverse_proxy 127.0.0.1:8080 {
+		header_up -Forwarded
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+		stream_timeout 8h
+		stream_close_delay 5m
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+			read_timeout 9h
+			write_timeout 9h
+		}
+	}
+}

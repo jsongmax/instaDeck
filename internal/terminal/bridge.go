@@ -54,14 +54,24 @@ func (writer outputWriter) Write(payload []byte) (int, error) {
 // Serve consumes a ticket and runs one terminal until completion. The adapter
 // must authenticate cookies and Origin before calling Serve.
 func (manager *Manager) Serve(ctx context.Context, ticket Ticket, sessionHash [32]byte, frames FrameConn) error {
+	defer frames.Close()
+	return manager.ServeUpgrade(ctx, ticket, sessionHash, func(Binding) (FrameConn, error) { return frames, nil })
+}
+
+// ServeUpgrade consumes and registers a ticket before allowing the HTTP upgrade.
+func (manager *Manager) ServeUpgrade(ctx context.Context, ticket Ticket, sessionHash [32]byte, upgrade func(Binding) (FrameConn, error)) error {
 	manager.mu.Lock()
 	binding, err := manager.consumeLocked(ticket, sessionHash)
 	if err != nil {
 		manager.mu.Unlock()
-		_ = frames.Close()
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, manager.options.AbsoluteTimeout)
+	if ctx.Err() != nil {
+		manager.mu.Unlock()
+		cancel()
+		return TimedOut
+	}
 	active := &activeSession{binding: binding, cancel: cancel, done: make(chan struct{})}
 	count := 0
 	for current := range manager.active {
@@ -72,19 +82,25 @@ func (manager *Manager) Serve(ctx context.Context, ticket Ticket, sessionHash [3
 	if manager.closed || count >= manager.options.PerSessionLimit || len(manager.active) >= manager.options.GlobalLimit {
 		manager.mu.Unlock()
 		cancel()
-		_ = frames.Close()
 		return QuotaExceeded
 	}
 	manager.active[active] = struct{}{}
 	manager.mu.Unlock()
+	var frames FrameConn
 	defer func() {
 		cancel()
-		_ = frames.Close()
+		if frames != nil {
+			_ = frames.Close()
+		}
 		manager.mu.Lock()
 		delete(manager.active, active)
 		close(active.done)
 		manager.mu.Unlock()
 	}()
+	frames, err = upgrade(binding)
+	if err != nil {
+		return err
+	}
 	stopFrame := watchCancellation(ctx, func() { _ = frames.Close() })
 	defer stopFrame()
 	client, err := manager.connect(ctx, binding)

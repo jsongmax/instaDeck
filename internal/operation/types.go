@@ -22,6 +22,8 @@ type Action struct {
 
 // Intent is one user request; confirmation is required for deletion.
 type Intent struct {
+	RequestID                                                   string `json:"-"`
+	AdministratorID                                             string `json:"-"`
 	ClientRequestID, CredentialID, Kind, MachineID, ConfirmName string
 	Body                                                        []byte
 }
