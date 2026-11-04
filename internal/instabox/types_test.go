@@ -2,6 +2,7 @@ package instabox
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -38,6 +39,14 @@ func TestCreateOptionalValues(t *testing.T) {
 		result, err := json.Marshal(selection)
 		if err != nil || string(result) != encoded {
 			t.Fatal("secret selection round trip failed")
+		}
+	}
+}
+
+func TestMachineStateFormatting(t *testing.T) {
+	for _, state := range []MachineState{MachineStateRunning, MachineStateSuspended, "future_state"} {
+		if actual := fmt.Sprintf("%s", state); actual != string(state) {
+			t.Fatalf("state formatting: %q", actual)
 		}
 	}
 }

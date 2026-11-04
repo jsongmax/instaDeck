@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	driver "modernc.org/sqlite"
 )
 
 //go:embed migrations/*.sql
@@ -22,6 +22,35 @@ var migrations embed.FS
 
 // ErrRejected means a record is absent, expired, consumed, or conflicts with stored state.
 var ErrRejected = errors.New("storage operation rejected")
+
+// ErrConflict identifies a constraint violation.
+var ErrConflict = errors.New("storage conflict")
+
+// ErrNotFound identifies an absent record.
+var ErrNotFound = errors.New("storage record not found")
+
+func storageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	var failure *driver.Error
+	if errors.As(err, &failure) && failure.Code()&255 == 19 {
+		return ErrConflict
+	}
+	if errors.Is(err, ErrRejected) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrConflict) {
+		return err
+	}
+	return errors.New("storage unavailable")
+}
 
 // Store owns a serialized writer and a small reader pool.
 type Store struct{ writer, reader *sql.DB }
@@ -120,7 +149,7 @@ func (s *Store) migrate(ctx context.Context) error {
 			if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 				return err
 			}
-			_, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES (?, ?, ?)", version, expected[version], time.Now().UTC().UnixMilli())
+			_, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version,checksum,applied_at) VALUES (?, ?, ?)", version, expected[version], time.Now().UTC().UnixMilli())
 			return err
 		})
 		if err != nil {
@@ -133,25 +162,31 @@ func (s *Store) migrate(ctx context.Context) error {
 func (s *Store) transaction(ctx context.Context, operation func(*sql.Tx) error) error {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return errors.New("transaction unavailable")
+		return storageError(err)
 	}
 	defer tx.Rollback()
 	if err = operation(tx); err != nil {
-		return ErrRejected
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return storageError(err)
 	}
 	if err = tx.Commit(); err != nil {
-		return errors.New("transaction commit failed")
+		return storageError(err)
 	}
 	return nil
 }
 
 func requireOne(result sql.Result, err error) error {
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	count, err := result.RowsAffected()
-	if err != nil || count != 1 {
-		return ErrRejected
+	if err != nil {
+		return storageError(err)
+	}
+	if count != 1 {
+		return ErrNotFound
 	}
 	return nil
 }

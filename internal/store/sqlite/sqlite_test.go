@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -226,7 +227,7 @@ func TestCompletionRollback(t *testing.T) {
 	existing := session("duplicate", now)
 	store.CreateSession(ctx, existing)
 	for _, recovery := range []bool{false, true} {
-		hash := challenge(t, store, time.Now().String(), now, 1)
+		hash := challenge(t, store, fmt.Sprintf("rollback challenge %t", recovery), now, 1)
 		store.AtomicTakeChallenge(ctx, hash, now)
 		var err error
 		if recovery {
@@ -237,7 +238,7 @@ func TestCompletionRollback(t *testing.T) {
 		if err == nil {
 			t.Fatal("duplicate session accepted")
 		}
-		replacement := session(time.Now().String(), now)
+		replacement := session(fmt.Sprintf("rollback replacement %t", recovery), now)
 		if recovery {
 			err = store.AtomicCompleteRecovery(ctx, hash, identity.TokenHash("test recovery"), replacement, now)
 		} else {
@@ -332,7 +333,7 @@ func TestRecordsAuditBackup(t *testing.T) {
 	if record, err := backup.ActionByID(ctx, action.ID); err != nil || record.State != "succeeded" {
 		t.Fatal("backup missing committed data")
 	}
-	if err := store.DeleteCredential(ctx, credential.ID); err == nil {
-		t.Fatal("foreign key ignored")
+	if err := store.DeleteCredential(ctx, credential.ID); err != nil {
+		t.Fatal("credential tombstone failed", err)
 	}
 }

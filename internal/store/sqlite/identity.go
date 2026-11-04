@@ -17,12 +17,12 @@ func (s *Store) CreateAdministrator(ctx context.Context, administrator identity.
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO administrator VALUES (?,?,?,?,?,?,?)`, administrator.ID, administrator.Username, password, administrator.TOTP.KeyVersion, administrator.TOTP.Nonce, administrator.TOTP.Ciphertext, administrator.LastTOTPStep)
+		_, err = tx.ExecContext(ctx, `INSERT INTO administrator (id,username,password,key_version,nonce,ciphertext,last_totp_step) VALUES (?,?,?,?,?,?,?)`, administrator.ID, administrator.Username, password, administrator.TOTP.KeyVersion, administrator.TOTP.Nonce, administrator.TOTP.Ciphertext, administrator.LastTOTPStep)
 		if err != nil {
 			return err
 		}
 		for _, hash := range administrator.RecoveryHashes {
-			if _, err = tx.ExecContext(ctx, "INSERT INTO recovery_codes VALUES (?,?)", administrator.ID, hash[:]); err != nil {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO recovery_codes (administrator_id,hash) VALUES (?,?)", administrator.ID, hash[:]); err != nil {
 				return err
 			}
 		}
@@ -35,14 +35,14 @@ func (s *Store) administrator(ctx context.Context, column, value string) (identi
 	var password []byte
 	err := s.reader.QueryRowContext(ctx, "SELECT id, username, password, key_version, nonce, ciphertext, last_totp_step FROM administrator WHERE "+column+" = ?", value).Scan(&administrator.ID, &administrator.Username, &password, &administrator.TOTP.KeyVersion, &administrator.TOTP.Nonce, &administrator.TOTP.Ciphertext, &administrator.LastTOTPStep)
 	if err != nil {
-		return identity.Administrator{}, ErrRejected
+		return identity.Administrator{}, storageError(err)
 	}
 	if json.Unmarshal(password, &administrator.Password) != nil {
 		return identity.Administrator{}, ErrRejected
 	}
 	rows, err := s.reader.QueryContext(ctx, "SELECT hash FROM recovery_codes WHERE administrator_id=?", administrator.ID)
 	if err != nil {
-		return identity.Administrator{}, ErrRejected
+		return identity.Administrator{}, storageError(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -75,7 +75,7 @@ func (s *Store) CreateChallenge(ctx context.Context, challenge identity.Challeng
 	}
 	_, err := s.writer.ExecContext(ctx, "INSERT INTO auth_challenges (hash,administrator_id,expires_at,attempts) VALUES (?,?,?,?)", challenge.Hash[:], challenge.AdministratorID, challenge.ExpiresAt.UnixMilli(), challenge.Attempts)
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	return nil
 }
@@ -94,7 +94,7 @@ func (s *Store) AtomicTakeChallenge(ctx context.Context, hash [32]byte, now time
 }
 
 func insertSession(ctx context.Context, tx *sql.Tx, session identity.Session) error {
-	_, err := tx.ExecContext(ctx, "INSERT INTO sessions VALUES (?,?,?,?,?,?,?)", session.Hash[:], session.AdministratorID, session.CSRFSecret, session.CreatedAt.UnixMilli(), session.LastSeen.UnixMilli(), session.AuthenticatedAt.UnixMilli(), session.Revoked)
+	_, err := tx.ExecContext(ctx, "INSERT INTO sessions (hash,administrator_id,csrf_secret,created_at,last_seen,authenticated_at,revoked) VALUES (?,?,?,?,?,?,?)", session.Hash[:], session.AdministratorID, session.CSRFSecret, session.CreatedAt.UnixMilli(), session.LastSeen.UnixMilli(), session.AuthenticatedAt.UnixMilli(), session.Revoked)
 	return err
 }
 
@@ -144,7 +144,10 @@ func useSession(ctx context.Context, tx *sql.Tx, hash [32]byte, now time.Time, i
 	session.CreatedAt = time.UnixMilli(created).UTC()
 	session.LastSeen = time.UnixMilli(lastSeen).UTC()
 	session.AuthenticatedAt = time.UnixMilli(authenticated).UTC()
-	if err != nil || session.Revoked || idle <= 0 || absolute <= 0 || now.Before(session.CreatedAt) || !now.Before(session.LastSeen.Add(idle)) || !now.Before(session.CreatedAt.Add(absolute)) {
+	if err != nil {
+		return identity.Session{}, err
+	}
+	if session.Revoked || idle <= 0 || absolute <= 0 || now.Before(session.CreatedAt) || !now.Before(session.LastSeen.Add(idle)) || !now.Before(session.CreatedAt.Add(absolute)) {
 		return identity.Session{}, ErrRejected
 	}
 	// now is taken before queueing for the writer, so a request can commit after
@@ -171,7 +174,7 @@ func (s *Store) AtomicUseSession(ctx context.Context, hash [32]byte, now time.Ti
 func (s *Store) RevokeSession(ctx context.Context, hash [32]byte) error {
 	_, err := s.writer.ExecContext(ctx, "UPDATE sessions SET revoked=1 WHERE hash=?", hash[:])
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	return nil
 }

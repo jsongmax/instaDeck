@@ -60,23 +60,11 @@ type Usage struct {
 	StoredBytes      int64        `json:"storedBytes"`
 }
 
-// String returns a redacted description.
-func (value Usage) String() string { return "Usage[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Usage) GoString() string { return value.String() }
-
 // MachineList describes the InstaBox MachineList schema.
 type MachineList struct {
 	Machines   []Machine `json:"machines"`
 	NextCursor *string   `json:"nextCursor"`
 }
-
-// String returns a redacted description.
-func (value MachineList) String() string { return "MachineList[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value MachineList) GoString() string { return value.String() }
 
 // CreateMachineRequest describes the InstaBox CreateMachineRequest schema.
 type CreateMachineRequest struct {
@@ -106,12 +94,6 @@ type CreateMachineRequest struct {
 	VCPUs                   *int64                   `json:"vcpus,omitempty"`
 }
 
-// String returns a redacted description.
-func (value CreateMachineRequest) String() string { return "CreateMachineRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value CreateMachineRequest) GoString() string { return value.String() }
-
 // Operation describes the InstaBox Operation schema.
 type Operation struct {
 	CreatedAt time.Time      `json:"createdAt"`
@@ -126,22 +108,10 @@ type Operation struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
-// String returns a redacted description.
-func (value Operation) String() string { return "Operation[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Operation) GoString() string { return value.String() }
-
 // TemplateList describes the InstaBox TemplateList schema.
 type TemplateList struct {
 	Templates []Template `json:"templates"`
 }
-
-// String returns a redacted description.
-func (value TemplateList) String() string { return "TemplateList[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value TemplateList) GoString() string { return value.String() }
 
 // Connection describes the InstaBox Connection schema.
 type Connection struct {
@@ -175,34 +145,16 @@ type ConnectionInfo struct {
 	Username     string    `json:"username"`
 }
 
-// String returns a redacted description.
-func (value ConnectionInfo) String() string { return "ConnectionInfo[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value ConnectionInfo) GoString() string { return value.String() }
-
 // CreateConnectionRequest describes the InstaBox CreateConnectionRequest schema.
 type CreateConnectionRequest struct {
 	PublicKey  string `json:"publicKey"`
 	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
 }
 
-// String returns a redacted description.
-func (value CreateConnectionRequest) String() string { return "CreateConnectionRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value CreateConnectionRequest) GoString() string { return value.String() }
-
 // ErrorBody describes the InstaBox ErrorBody schema.
 type ErrorBody struct {
 	Error Error `json:"error"`
 }
-
-// String returns a redacted description.
-func (value ErrorBody) String() string { return "ErrorBody[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value ErrorBody) GoString() string { return value.String() }
 
 // StartMachineRequest describes the InstaBox StartMachineRequest schema.
 type StartMachineRequest struct {
@@ -212,42 +164,18 @@ type StartMachineRequest struct {
 	VCPUs  *int64 `json:"vcpus,omitempty"`
 }
 
-// String returns a redacted description.
-func (value StartMachineRequest) String() string { return "StartMachineRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value StartMachineRequest) GoString() string { return value.String() }
-
 // StopMachineRequest describes the InstaBox StopMachineRequest schema.
 type StopMachineRequest struct {
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
-
-// String returns a redacted description.
-func (value StopMachineRequest) String() string { return "StopMachineRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value StopMachineRequest) GoString() string { return value.String() }
 
 // ResumeMachineRequest describes the InstaBox ResumeMachineRequest schema.
 type ResumeMachineRequest struct {
 	Vault *bool `json:"vault,omitempty"`
 }
 
-// String returns a redacted description.
-func (value ResumeMachineRequest) String() string { return "ResumeMachineRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value ResumeMachineRequest) GoString() string { return value.String() }
-
 // SuspendMachineRequest describes the InstaBox SuspendMachineRequest schema.
 type SuspendMachineRequest map[string]any
-
-// String returns a redacted description.
-func (value SuspendMachineRequest) String() string { return "SuspendMachineRequest[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value SuspendMachineRequest) GoString() string { return value.String() }
 
 // MachineSpec describes the InstaBox MachineSpec schema.
 type MachineSpec struct {
@@ -256,12 +184,6 @@ type MachineSpec struct {
 	RootDiskGiB       int64 `json:"rootDiskGiB,omitempty"`
 	VCPUs             int64 `json:"vcpus"`
 }
-
-// String returns a redacted description.
-func (value MachineSpec) String() string { return "MachineSpec[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value MachineSpec) GoString() string { return value.String() }
 
 // OrgRef describes the InstaBox OrgRef schema.
 type OrgRef struct {
@@ -272,12 +194,6 @@ type OrgRef struct {
 	Tier            string `json:"tier"`
 }
 
-// String returns a redacted description.
-func (value OrgRef) String() string { return "OrgRef[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value OrgRef) GoString() string { return value.String() }
-
 // PlanOffer describes the InstaBox PlanOffer schema.
 type PlanOffer struct {
 	MaxDiskGiB    int64   `json:"maxDiskGiB"`
@@ -287,12 +203,6 @@ type PlanOffer struct {
 	MonthlyFeeUSD float64 `json:"monthlyFeeUSD"`
 	Tier          string  `json:"tier"`
 }
-
-// String returns a redacted description.
-func (value PlanOffer) String() string { return "PlanOffer[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value PlanOffer) GoString() string { return value.String() }
 
 // OrgUsage describes the InstaBox OrgUsage schema.
 type OrgUsage struct {
@@ -329,12 +239,6 @@ type OrgUsage struct {
 	VCPUUSD               float64    `json:"vcpuUSD"`
 }
 
-// String returns a redacted description.
-func (value OrgUsage) String() string { return "OrgUsage[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value OrgUsage) GoString() string { return value.String() }
-
 // UsageLimits describes the InstaBox UsageLimits schema.
 type UsageLimits struct {
 	LiveSnapshots bool          `json:"liveSnapshots,omitempty"`
@@ -349,24 +253,12 @@ type UsageLimits struct {
 	Vault         VaultLimits   `json:"vault,omitempty"`
 }
 
-// String returns a redacted description.
-func (value UsageLimits) String() string { return "UsageLimits[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value UsageLimits) GoString() string { return value.String() }
-
 // UsageStorage describes the InstaBox UsageStorage schema.
 type UsageStorage struct {
 	DeletedMachineSnapshotBytes int64                 `json:"deletedMachineSnapshotBytes"`
 	DeletedMachineSnapshots     int64                 `json:"deletedMachineSnapshots"`
 	Machines                    []UsageMachineStorage `json:"machines"`
 }
-
-// String returns a redacted description.
-func (value UsageStorage) String() string { return "UsageStorage[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value UsageStorage) GoString() string { return value.String() }
 
 // Machine describes the InstaBox Machine schema.
 type Machine struct {
@@ -406,20 +298,8 @@ type Machine struct {
 	Vault                   bool             `json:"vault"`
 }
 
-// String returns a redacted description.
-func (value Machine) String() string { return "Machine[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Machine) GoString() string { return value.String() }
-
 // AutoSuspendAfterSeconds describes the InstaBox AutoSuspendAfterSeconds schema.
 type AutoSuspendAfterSeconds int64
-
-// String returns a redacted description.
-func (value AutoSuspendAfterSeconds) String() string { return "AutoSuspendAfterSeconds[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value AutoSuspendAfterSeconds) GoString() string { return value.String() }
 
 // DirectSecret describes the InstaBox DirectSecret schema.
 type DirectSecret struct {
@@ -437,41 +317,17 @@ func (value DirectSecret) GoString() string { return value.String() }
 // SecretName describes the InstaBox SecretName schema.
 type SecretName string
 
-// String returns a redacted description.
-func (value SecretName) String() string { return "SecretName[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value SecretName) GoString() string { return value.String() }
-
 // MaxRunMinutes describes the InstaBox MaxRunMinutes schema.
 type MaxRunMinutes int64
 
-// String returns a redacted description.
-func (value MaxRunMinutes) String() string { return "MaxRunMinutes[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value MaxRunMinutes) GoString() string { return value.String() }
-
 // Metadata describes the InstaBox Metadata schema.
 type Metadata map[string]string
-
-// String returns a redacted description.
-func (value Metadata) String() string { return "Metadata[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Metadata) GoString() string { return value.String() }
 
 // SecretSelection describes the InstaBox SecretSelection schema.
 type SecretSelection struct {
 	All   bool
 	Names []string
 }
-
-// String returns a redacted description.
-func (value SecretSelection) String() string { return "SecretSelection[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value SecretSelection) GoString() string { return value.String() }
 
 // Error describes the InstaBox Error schema.
 type Error struct {
@@ -488,7 +344,8 @@ type Error struct {
 	Retryable         bool     `json:"retryable"`
 }
 
-// String returns a redacted description.
+// String returns a redacted description, because Message and Hint are
+// server-controlled text.
 func (value Error) String() string { return "Error[redacted]" }
 
 // GoString returns a redacted Go description.
@@ -515,12 +372,6 @@ type Template struct {
 	Version      string            `json:"version"`
 }
 
-// String returns a redacted description.
-func (value Template) String() string { return "Template[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Template) GoString() string { return value.String() }
-
 // HostTrust describes the InstaBox HostTrust schema.
 type HostTrust struct {
 	Principals []string `json:"principals"`
@@ -528,23 +379,11 @@ type HostTrust struct {
 	Type       string   `json:"type"`
 }
 
-// String returns a redacted description.
-func (value HostTrust) String() string { return "HostTrust[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value HostTrust) GoString() string { return value.String() }
-
 // VaultLimits describes the InstaBox VaultLimits schema.
 type VaultLimits struct {
 	MaxBytes int64 `json:"maxBytes"`
 	MaxItems int64 `json:"maxItems"`
 }
-
-// String returns a redacted description.
-func (value VaultLimits) String() string { return "VaultLimits[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value VaultLimits) GoString() string { return value.String() }
 
 // UsageMachineStorage describes the InstaBox UsageMachineStorage schema.
 type UsageMachineStorage struct {
@@ -556,12 +395,6 @@ type UsageMachineStorage struct {
 	Snapshots     int64  `json:"snapshots"`
 	State         string `json:"state"`
 }
-
-// String returns a redacted description.
-func (value UsageMachineStorage) String() string { return "UsageMachineStorage[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value UsageMachineStorage) GoString() string { return value.String() }
 
 // MachineAbuseLock describes the InstaBox MachineAbuseLock schema.
 type MachineAbuseLock struct {
@@ -577,12 +410,6 @@ type MachineAbuseLock struct {
 	Process     string    `json:"process,omitempty"`
 	What        string    `json:"what"`
 }
-
-// String returns a redacted description.
-func (value MachineAbuseLock) String() string { return "MachineAbuseLock[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value MachineAbuseLock) GoString() string { return value.String() }
 
 // MachineState describes the InstaBox MachineState schema.
 type MachineState string
@@ -612,22 +439,10 @@ const (
 	MachineStateError MachineState = "error"
 )
 
-// String returns a redacted description.
-func (value MachineState) String() string { return "MachineState[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value MachineState) GoString() string { return value.String() }
-
 // SnapshotRef describes the InstaBox SnapshotRef schema.
 type SnapshotRef struct {
 	ID string `json:"id"`
 }
-
-// String returns a redacted description.
-func (value SnapshotRef) String() string { return "SnapshotRef[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value SnapshotRef) GoString() string { return value.String() }
 
 // OOMKill describes the InstaBox OOMKill schema.
 type OOMKill struct {
@@ -640,23 +455,11 @@ type OOMKill struct {
 	UID          int64     `json:"uid,omitempty"`
 }
 
-// String returns a redacted description.
-func (value OOMKill) String() string { return "OOMKill[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value OOMKill) GoString() string { return value.String() }
-
 // Runtime describes the InstaBox Runtime schema.
 type Runtime struct {
 	ProcessesPreserved bool `json:"processesPreserved,omitempty"`
 	Ready              bool `json:"ready"`
 }
-
-// String returns a redacted description.
-func (value Runtime) String() string { return "Runtime[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Runtime) GoString() string { return value.String() }
 
 // Storage describes the InstaBox Storage schema.
 type Storage struct {
@@ -667,12 +470,6 @@ type Storage struct {
 	Synced      bool   `json:"synced"`
 }
 
-// String returns a redacted description.
-func (value Storage) String() string { return "Storage[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value Storage) GoString() string { return value.String() }
-
 // TemplateRef describes the InstaBox TemplateRef schema.
 type TemplateRef struct {
 	Digest  string `json:"digest"`
@@ -680,9 +477,3 @@ type TemplateRef struct {
 	Kernel  string `json:"kernel,omitempty"`
 	Version string `json:"version"`
 }
-
-// String returns a redacted description.
-func (value TemplateRef) String() string { return "TemplateRef[redacted]" }
-
-// GoString returns a redacted Go description.
-func (value TemplateRef) GoString() string { return value.String() }

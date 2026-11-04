@@ -2,17 +2,13 @@ package sqlite
 
 import (
 	"context"
+	"instadeck/internal/account"
 	"instadeck/internal/audit"
-	"instadeck/internal/keyring"
 	"time"
 )
 
 // Credential stores encrypted key material and declared account capabilities.
-type Credential struct {
-	ID, Name, OrganizationID, Capabilities, Status string
-	Envelope                                       keyring.Envelope
-	CreatedAt, UpdatedAt                           time.Time
-}
+type Credential = account.Record
 
 // Action stores the original request and durable upstream tracking state.
 type Action struct {
@@ -24,30 +20,30 @@ type Action struct {
 
 // CreateCredential stores an encrypted credential.
 func (s *Store) CreateCredential(ctx context.Context, credential Credential) error {
-	_, err := s.writer.ExecContext(ctx, "INSERT INTO credentials VALUES (?,?,?,?,?,?,?,?,?,?)", credential.ID, credential.Name, credential.Envelope.KeyVersion, credential.Envelope.Nonce, credential.Envelope.Ciphertext, credential.OrganizationID, credential.Capabilities, credential.Status, credential.CreatedAt.UnixMilli(), credential.UpdatedAt.UnixMilli())
+	_, err := s.writer.ExecContext(ctx, "INSERT INTO credentials (id,name,key_version,nonce,ciphertext,organization_id,capabilities,status,created_at,updated_at,user_id,version,revision,enabled) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", credential.ID, credential.Name, credential.Envelope.KeyVersion, credential.Envelope.Nonce, credential.Envelope.Ciphertext, credential.OrganizationID, credential.Capabilities, credential.Status, credential.CreatedAt.UnixMilli(), credential.UpdatedAt.UnixMilli(), credential.UserID, credential.Version, credential.Revision, credential.Enabled)
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	return nil
 }
 
 // UpdateCredential replaces mutable credential fields without changing creation time.
 func (s *Store) UpdateCredential(ctx context.Context, credential Credential) error {
-	return requireOne(s.writer.ExecContext(ctx, "UPDATE credentials SET name=?,key_version=?,nonce=?,ciphertext=?,organization_id=?,capabilities=?,status=?,updated_at=? WHERE id=?", credential.Name, credential.Envelope.KeyVersion, credential.Envelope.Nonce, credential.Envelope.Ciphertext, credential.OrganizationID, credential.Capabilities, credential.Status, credential.UpdatedAt.UnixMilli(), credential.ID))
+	return requireOne(s.writer.ExecContext(ctx, "UPDATE credentials SET name=?,key_version=?,nonce=?,ciphertext=?,organization_id=?,capabilities=?,status=?,updated_at=?,user_id=?,version=?,revision=?,enabled=? WHERE id=? AND status<>'deleted'", credential.Name, credential.Envelope.KeyVersion, credential.Envelope.Nonce, credential.Envelope.Ciphertext, credential.OrganizationID, credential.Capabilities, credential.Status, credential.UpdatedAt.UnixMilli(), credential.UserID, credential.Version, credential.Revision, credential.Enabled, credential.ID))
 }
 
-// DeleteCredential removes a credential when no action references it.
+// DeleteCredential retains history while erasing credential material.
 func (s *Store) DeleteCredential(ctx context.Context, id string) error {
-	return requireOne(s.writer.ExecContext(ctx, "DELETE FROM credentials WHERE id=?", id))
+	return requireOne(s.writer.ExecContext(ctx, "UPDATE credentials SET status='deleted',enabled=0,key_version=0,nonce=NULL,ciphertext=NULL,revision=revision+1 WHERE id=?", id))
 }
 
 // CredentialByID reads an encrypted credential.
 func (s *Store) CredentialByID(ctx context.Context, id string) (Credential, error) {
 	var credential Credential
 	var created, updated int64
-	err := s.reader.QueryRowContext(ctx, "SELECT * FROM credentials WHERE id=?", id).Scan(&credential.ID, &credential.Name, &credential.Envelope.KeyVersion, &credential.Envelope.Nonce, &credential.Envelope.Ciphertext, &credential.OrganizationID, &credential.Capabilities, &credential.Status, &created, &updated)
+	err := s.reader.QueryRowContext(ctx, "SELECT id,name,key_version,nonce,ciphertext,organization_id,capabilities,status,created_at,updated_at,user_id,version,revision,enabled FROM credentials WHERE id=?", id).Scan(&credential.ID, &credential.Name, &credential.Envelope.KeyVersion, &credential.Envelope.Nonce, &credential.Envelope.Ciphertext, &credential.OrganizationID, &credential.Capabilities, &credential.Status, &created, &updated, &credential.UserID, &credential.Version, &credential.Revision, &credential.Enabled)
 	if err != nil {
-		return Credential{}, ErrRejected
+		return Credential{}, storageError(err)
 	}
 	credential.CreatedAt = time.UnixMilli(created).UTC()
 	credential.UpdatedAt = time.UnixMilli(updated).UTC()
@@ -58,7 +54,7 @@ func (s *Store) CredentialByID(ctx context.Context, id string) (Credential, erro
 func (s *Store) ListCredentials(ctx context.Context) ([]Credential, error) {
 	rows, err := s.reader.QueryContext(ctx, "SELECT id FROM credentials ORDER BY id")
 	if err != nil {
-		return nil, ErrRejected
+		return nil, storageError(err)
 	}
 	var ids []string
 	for rows.Next() {
@@ -72,7 +68,7 @@ func (s *Store) ListCredentials(ctx context.Context) ([]Credential, error) {
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return nil, ErrRejected
+		return nil, storageError(err)
 	}
 	records := make([]Credential, 0, len(ids))
 	for _, id := range ids {
@@ -87,9 +83,9 @@ func (s *Store) ListCredentials(ctx context.Context) ([]Credential, error) {
 
 // CreateAction persists an intent before any upstream request; both idempotency keys are unique.
 func (s *Store) CreateAction(ctx context.Context, action Action) error {
-	_, err := s.writer.ExecContext(ctx, "INSERT INTO actions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", action.ID, action.CredentialID, action.MachineID, action.Kind, action.RequestBody, action.UpstreamIdempotencyKey, action.ClientRequestID, action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.CreatedAt.UnixMilli(), action.UpdatedAt.UnixMilli())
+	_, err := s.writer.ExecContext(ctx, "INSERT INTO actions (id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", action.ID, action.CredentialID, action.MachineID, action.Kind, action.RequestBody, action.UpstreamIdempotencyKey, action.ClientRequestID, action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.CreatedAt.UnixMilli(), action.UpdatedAt.UnixMilli())
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	return nil
 }
@@ -100,9 +96,9 @@ func (s *Store) UpdateAction(ctx context.Context, action Action) error {
 }
 
 func (s *Store) actions(ctx context.Context, where string, args ...any) ([]Action, error) {
-	rows, err := s.reader.QueryContext(ctx, "SELECT * FROM actions "+where+" ORDER BY created_at,id", args...)
+	rows, err := s.reader.QueryContext(ctx, "SELECT id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at FROM actions "+where+" ORDER BY created_at,id", args...)
 	if err != nil {
-		return nil, ErrRejected
+		return nil, storageError(err)
 	}
 	defer rows.Close()
 	records := []Action{}
@@ -125,8 +121,11 @@ func (s *Store) actions(ctx context.Context, where string, args ...any) ([]Actio
 // ActionByID reads a persisted intent.
 func (s *Store) ActionByID(ctx context.Context, id string) (Action, error) {
 	records, err := s.actions(ctx, "WHERE id=?", id)
-	if err != nil || len(records) != 1 {
-		return Action{}, ErrRejected
+	if err != nil {
+		return Action{}, err
+	}
+	if len(records) != 1 {
+		return Action{}, ErrNotFound
 	}
 	return records[0], nil
 }
@@ -134,8 +133,11 @@ func (s *Store) ActionByID(ctx context.Context, id string) (Action, error) {
 // ActionByClientRequestID resolves a retried client request to its original intent.
 func (s *Store) ActionByClientRequestID(ctx context.Context, id string) (Action, error) {
 	records, err := s.actions(ctx, "WHERE client_request_id=?", id)
-	if err != nil || len(records) != 1 {
-		return Action{}, ErrRejected
+	if err != nil {
+		return Action{}, err
+	}
+	if len(records) != 1 {
+		return Action{}, ErrNotFound
 	}
 	return records[0], nil
 }
@@ -157,7 +159,7 @@ type AuditRecord struct {
 func (s *Store) WriteEvent(ctx context.Context, event audit.Event) error {
 	_, err := s.writer.ExecContext(ctx, "INSERT INTO audit_events (time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail) VALUES (?,?,?,?,?,?,?,?,?,?)", event.Time.UnixMilli(), event.Type, event.SubjectID, event.CredentialID, event.MachineID, event.ActionID, event.Result, event.RequestID, event.SourceAddress, event.Detail())
 	if err != nil {
-		return ErrRejected
+		return storageError(err)
 	}
 	return nil
 }
@@ -167,9 +169,9 @@ func (s *Store) ReadAuditEvents(ctx context.Context, after int64, limit int) ([]
 	if after < 0 || limit < 1 || limit > 1000 {
 		return nil, ErrRejected
 	}
-	rows, err := s.reader.QueryContext(ctx, "SELECT * FROM audit_events WHERE id>? ORDER BY id LIMIT ?", after, limit)
+	rows, err := s.reader.QueryContext(ctx, "SELECT id,time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail FROM audit_events WHERE id>? ORDER BY id LIMIT ?", after, limit)
 	if err != nil {
-		return nil, ErrRejected
+		return nil, storageError(err)
 	}
 	defer rows.Close()
 	records := []AuditRecord{}
