@@ -16,14 +16,14 @@ func TestClientIPTrustBoundary(t *testing.T) {
 		expected          string
 	}{
 		{remote: "203.0.113.1:1234", forwarded: "1.1.1.1", trust: true, expected: "203.0.113.1"},
-		{remote: "127.0.0.1:1234", forwarded: "1.1.1.1", expected: "127.0.0.1"},
+		{remote: "127.0.0.1:1234", forwarded: "1.1.1.1", expected: "1.1.1.1"},
 		{remote: "127.0.0.1:1234", forwarded: "1.1.1.1, 203.0.113.1", trust: true, expected: "203.0.113.1"},
 		{remote: "[::1]:1234", forwarded: "invalid", trust: true, expected: "invalid"},
 	} {
 		request := httptest.NewRequest("POST", "/", nil)
 		request.RemoteAddr = test.remote
 		request.Header.Set("X-Forwarded-For", test.forwarded)
-		if got := ClientIP(request, test.trust); got != test.expected {
+		if got := ClientIP(request); got != test.expected {
 			t.Fatalf("got %s, expected %s", got, test.expected)
 		}
 	}

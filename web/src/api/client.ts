@@ -118,7 +118,17 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   throw new ApiError(res.status, code, message, retryable, requestId)
 }
 
+export interface SetupStatus { required: boolean; codeRequired: boolean }
+export interface SetupEnrollment { otpauthUri: string; secret: string }
+export interface SetupResult extends SessionInfo { recoveryCodes: string[] }
+
 export const api = {
+  setupStatus: () => apiRequest<SetupStatus>('/setup/status', { skipAuthRedirect: true }),
+  setupStart: (username: string, password: string, setupCode?: string) =>
+    apiRequest<SetupEnrollment>('/setup/start', { method: 'POST', body: { username, password, setupCode }, skipAuthRedirect: true }),
+  setupComplete: (code: string) =>
+    apiRequest<SetupResult>('/setup/complete', { method: 'POST', body: { code }, skipAuthRedirect: true }),
+
   getSession: (skipAuthRedirect = false) =>
     apiRequest<SessionInfo>('/session', { method: 'GET', skipAuthRedirect }),
 

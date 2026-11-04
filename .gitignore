@@ -11,6 +11,8 @@ node_modules/
 .env.*
 !.env.example
 .ccg/
+instadeck-data/
+.build/
 
 # Local AI instructions
 CLAUDE.md

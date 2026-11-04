@@ -7,6 +7,7 @@ import { AppearancePage } from './components/AppearancePage'
 import { CommandPalette } from './components/CommandPalette'
 import { CreateMachineDialog, ReauthDialog, ThemeDialog } from './components/Dialogs'
 import { ErrorIcon, Icon, LogoSvg, Swatch } from './components/Icons'
+import { SetupGate } from './components/SetupWizard'
 import { LoginOverlay } from './components/LoginOverlay'
 import { MachineDrawer } from './components/MachineDrawer'
 import { MachinesPage } from './components/MachinesPage'
@@ -487,7 +488,7 @@ const defaultQueryClient = new QueryClient({
 export function App({ queryClient = defaultQueryClient }: { queryClient?: QueryClient }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <WorkspaceShell />
+      <SetupGate><WorkspaceShell /></SetupGate>
     </QueryClientProvider>
   )
 }

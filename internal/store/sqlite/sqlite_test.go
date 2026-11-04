@@ -68,7 +68,7 @@ func TestMigrations(t *testing.T) {
 		invalid.Close()
 		t.Fatal("accepted checksum mismatch")
 	}
-	if _, err = store.writer.ExecContext(ctx, "UPDATE schema_migrations SET version=999"); err != nil {
+	if _, err = store.writer.ExecContext(ctx, "UPDATE schema_migrations SET version=999 WHERE version=1"); err != nil {
 		t.Fatal(err)
 	}
 	if invalid, err := Open(ctx, path); err == nil {

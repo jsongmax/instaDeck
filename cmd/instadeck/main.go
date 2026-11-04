@@ -9,7 +9,6 @@ import (
 	"instadeck/internal/fleet"
 	"instadeck/internal/httpapi"
 	"instadeck/internal/identity"
-	"instadeck/internal/keyring"
 	"instadeck/internal/operation"
 	"instadeck/internal/store/sqlite"
 	"instadeck/internal/terminal"
@@ -51,8 +50,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	if err != nil {
 		return err
 	}
-	ring, err := keyring.Load(configuration.MasterKeyPath)
-	if err != nil {
+	if err := os.MkdirAll(configuration.DataDir, 0700); err != nil {
 		return err
 	}
 	store, err := sqlite.Open(ctx, configuration.DatabasePath)
@@ -60,6 +58,25 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 		return err
 	}
 	defer store.Close()
+	ring, err := loadMasterKey(ctx, store, configuration.MasterKeyPath)
+	if err != nil {
+		return err
+	}
+	if configuration.Origin == "" {
+		configuration.Origin, err = store.PanelOrigin(ctx)
+		if err != nil {
+			return err
+		}
+		// admin init creates an administrator without a browser to learn the
+		// origin from, and every login would then be rejected.
+		initialized, err := store.HasAdministrator(ctx)
+		if err != nil {
+			return err
+		}
+		if initialized && configuration.Origin == "" {
+			return errors.New("panel origin is not set: run 'instadeck admin set-origin <url>' or set INSTADECK_ORIGIN")
+		}
+	}
 	if err := verifyEncrypted(ctx, configuration.DatabasePath, ring); err != nil {
 		return err
 	}
@@ -82,7 +99,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 		return err
 	}
 	defer terminals.Shutdown()
-	api, err := httpapi.New(httpapi.Dependencies{Config: configuration, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: store, Assets: web.Assets(), Logger: slog.Default(), AbsoluteSessionTTL: options.AbsoluteTTL})
+	api, err := httpapi.New(httpapi.Dependencies{Config: configuration, SetupStore: store, SetupOutput: os.Stderr, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: store, Assets: web.Assets(), Logger: slog.Default(), AbsoluteSessionTTL: options.AbsoluteTTL})
 	if err != nil {
 		return err
 	}
@@ -92,7 +109,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	defer actions.Stop()
 	listener, err := net.Listen("tcp", configuration.ListenAddress)
 	if err != nil {
-		return errors.New("listen failed")
+		return fmt.Errorf("cannot listen on %s: %w; set INSTADECK_LISTEN to use another address", configuration.ListenAddress, err)
 	}
 	server := &http.Server{Handler: api, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384, ErrorLog: slog.NewLogLogger(slog.NewTextHandler(io.Discard, nil), slog.LevelError)}
 	finished := make(chan error, 1)

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestDeploymentCredentialPathCannotBeOverriddenByExample(t *testing.T) {
+func TestDeploymentNeedsNoConfigurationFile(t *testing.T) {
 	environment, err := os.ReadFile(filepath.Join("..", "..", "deploy", ".env.example"))
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,10 @@ func TestDeploymentCredentialPathCannotBeOverriddenByExample(t *testing.T) {
 	if strings.Contains(string(unit), "ReadOnlyPaths=/etc/instadeck/master.key") {
 		t.Error("redundant master key ReadOnlyPaths remains")
 	}
-	if !strings.Contains(string(unit), "LoadCredential=master.key:") || !strings.Contains(string(unit), "INSTADECK_MASTER_KEY_FILE=%d/master.key") {
-		t.Fatal("service does not use credential directory")
+	if strings.Contains(string(unit), "EnvironmentFile=") || strings.Contains(string(unit), "LoadCredential=") {
+		t.Fatal("service requires preconfigured files")
+	}
+	if !strings.Contains(string(unit), "StateDirectory=instadeck") || !strings.Contains(string(unit), "Environment=INSTADECK_DATA_DIR=/var/lib/instadeck") {
+		t.Fatal("missing automatic data directory")
 	}
 }

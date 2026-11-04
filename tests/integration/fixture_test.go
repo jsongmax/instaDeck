@@ -63,7 +63,7 @@ type fixture struct {
 	recovery     []string
 }
 
-func newFixture(t *testing.T, trust bool) *fixture {
+func newFixture(t *testing.T, trust bool, uninitialized ...bool) *fixture {
 	t.Helper()
 	directory := t.TempDir()
 	fixture := &fixture{directory: directory}
@@ -91,9 +91,11 @@ func newFixture(t *testing.T, trust bool) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.recovery, err = identities.Initialize(context.Background(), "admin-id", "admin", testPassword, []byte("12345678901234567890"))
-	if err != nil {
-		t.Fatal(err)
+	if len(uninitialized) == 0 || !uninitialized[0] {
+		fixture.recovery, err = identities.Initialize(context.Background(), "admin-id", "admin", testPassword, []byte("12345678901234567890"))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	fixture.upstream = httptest.NewServer(http.HandlerFunc(fixture.upstreamHTTP))
 	t.Cleanup(fixture.upstream.Close)
@@ -114,7 +116,7 @@ func newFixture(t *testing.T, trust bool) *fixture {
 	}
 	t.Cleanup(terminals.Shutdown)
 	t.Cleanup(actions.Stop)
-	fixture.dependencies = httpapi.Dependencies{Config: config.Config{Origin: "http://127.0.0.1:8080", MasterKeyPath: keyPath, TrustLocalProxy: trust}, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: fixture.store, Logger: slog.New(slog.NewJSONHandler(&fixture.logs, nil)), Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>test SPA</html>")}}, AbsoluteSessionTTL: 8 * time.Hour}
+	fixture.dependencies = httpapi.Dependencies{Config: config.Config{Origin: "http://127.0.0.1:8080", MasterKeyPath: keyPath}, SetupStore: fixture.store, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: fixture.store, Logger: slog.New(slog.NewJSONHandler(&fixture.logs, nil)), Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>test SPA</html>")}}, AbsoluteSessionTTL: 8 * time.Hour}
 	fixture.api, err = httpapi.New(fixture.dependencies)
 	if err != nil {
 		t.Fatal(err)

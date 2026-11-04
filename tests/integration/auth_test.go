@@ -28,7 +28,7 @@ func totpCode(step int64) string {
 
 func TestEveryRegisteredBusinessRouteRequiresSession(t *testing.T) {
 	fixture := newFixture(t, false)
-	public := map[string]bool{"GET /api/v1/healthz": true, "POST /api/v1/auth/password": true, "POST /api/v1/auth/totp": true, "POST /api/v1/auth/recovery": true}
+	public := map[string]bool{"GET /api/v1/setup/status": true, "POST /api/v1/setup/start": true, "POST /api/v1/setup/complete": true, "GET /api/v1/healthz": true, "POST /api/v1/auth/password": true, "POST /api/v1/auth/totp": true, "POST /api/v1/auth/recovery": true}
 	count := 0
 	err := chi.Walk(fixture.api.Routes(), func(method, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
 		key := method + " " + route

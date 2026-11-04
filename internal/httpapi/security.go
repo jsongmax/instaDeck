@@ -76,7 +76,7 @@ func (api *API) changeSecurity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.sessionCookie), password, newPassword, ClientIP(r, api.dependencies.Config.TrustLocalProxy), mode)
+	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), password, newPassword, ClientIP(r), mode)
 	if err != nil {
 		_ = api.event(r, "security."+mode, "failure", "", "")
 		securityFailure(w, r, err)
@@ -121,7 +121,7 @@ func (api *API) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "security.totp", "", "") {
 		return
 	}
-	result, err := api.dependencies.Identity.ConfirmTOTP(r.Context(), api.token(r, api.sessionCookie), input.Code)
+	result, err := api.dependencies.Identity.ConfirmTOTP(r.Context(), api.token(r, api.policy.Load().sessionCookie), input.Code)
 	if err != nil {
 		_ = api.event(r, "security.totp", "failure", "", "")
 		securityFailure(w, r, err)
@@ -143,7 +143,7 @@ func (api *API) finishSecurityRotation(w http.ResponseWriter, r *http.Request, r
 		fail(w, r, 503, "unavailable")
 		return
 	}
-	api.cookie(w, api.sessionCookie, result.Token, 0)
+	api.cookie(w, api.policy.Load().sessionCookie, result.Token, 0)
 	response := map[string]any{"administratorId": session.AdministratorID, "csrfToken": session.CSRFSecret, "expiresAt": session.CreatedAt.Add(api.dependencies.AbsoluteSessionTTL), "recentlyAuthenticated": api.dependencies.Identity.RecentlyAuthenticated(session)}
 	if result.RecoveryCodes != nil {
 		response["recoveryCodes"] = result.RecoveryCodes
@@ -167,7 +167,7 @@ func (api *API) sessions(w http.ResponseWriter, r *http.Request) {
 func (api *API) revokeSessions(w http.ResponseWriter, r *http.Request) {
 	api.authMutex.Lock()
 	defer api.authMutex.Unlock()
-	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.sessionCookie))
+	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.policy.Load().sessionCookie))
 	if err != nil {
 		fail(w, r, 401, "unauthorized")
 		return
@@ -179,7 +179,7 @@ func (api *API) revokeSessions(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "sessions.revoke", "", "") {
 		return
 	}
-	hashes, err := api.dependencies.Identity.RevokeSessions(r.Context(), api.token(r, api.sessionCookie), chi.URLParam(r, "publicId"))
+	hashes, err := api.dependencies.Identity.RevokeSessions(r.Context(), api.token(r, api.policy.Load().sessionCookie), chi.URLParam(r, "publicId"))
 	if err != nil {
 		securityFailure(w, r, err)
 		return

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api } from '../api/client'
 import { ApiError, formatRelativeTime } from '../api/errors'
 import { useAppStore } from '../store/useAppStore'
+import { evaluatePasswordStrength } from '../api/passwordStrength'
 import { ModalDialog } from './Dialogs'
 
 type SecurityModalState =
@@ -12,24 +13,6 @@ type SecurityModalState =
   | { kind: 'rebind-qr'; otpauthUri: string; secret: string }
   | { kind: 'regen-verify' }
   | { kind: 'codes'; title: string; codes: string[] }
-
-function evaluatePasswordStrength(pw: string): {
-  width: string
-  color: string
-  text: string
-} {
-  const n = pw.length
-  if (!n) {
-    return { width: '0', color: 'var(--line-2)', text: '至少 12 位。' }
-  }
-  const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^\w]/].filter((r) => r.test(pw)).length
-  const level = n < 12 ? 0 : kinds >= 3 && n >= 16 ? 2 : 1
-  return {
-    width: `${[28, 62, 100][level]}%`,
-    color: ['var(--bad)', 'var(--warn)', 'var(--ok)'][level],
-    text: ['太短，至少 12 位', '可以使用，再长一些更安全', '很好'][level],
-  }
-}
 
 export function SecurityPage() {
   const queryClient = useQueryClient()

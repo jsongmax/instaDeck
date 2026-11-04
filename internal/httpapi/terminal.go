@@ -55,7 +55,7 @@ func (api *API) ticket(w http.ResponseWriter, r *http.Request) {
 	}
 	api.authMutex.Lock()
 	defer api.authMutex.Unlock()
-	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.sessionCookie))
+	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.policy.Load().sessionCookie))
 	if err != nil {
 		fail(w, r, 401, "unauthorized")
 		return
@@ -94,7 +94,7 @@ func (api *API) websocket(w http.ResponseWriter, r *http.Request) {
 			api.authMutex.Unlock()
 		}
 	}()
-	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.sessionCookie))
+	session, err := api.dependencies.Identity.Session(r.Context(), api.token(r, api.policy.Load().sessionCookie))
 	if err != nil {
 		fail(w, r, 401, "unauthorized")
 		return
@@ -117,7 +117,7 @@ func (api *API) websocket(w http.ResponseWriter, r *http.Request) {
 			rejectionStatus, rejectionCode = 503, "audit_unavailable"
 			return nil, errors.New("audit unavailable")
 		}
-		pattern := strings.NewReplacer("[", "\\[", "]", "\\]").Replace(api.dependencies.Config.Origin)
+		pattern := strings.NewReplacer("[", "\\[", "]", "\\]").Replace(api.policy.Load().origin)
 		if ctx.Err() != nil {
 			return nil, terminal.TimedOut
 		}

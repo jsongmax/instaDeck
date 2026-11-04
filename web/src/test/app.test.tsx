@@ -254,6 +254,7 @@ const defaultFleet: FleetResponse = {
 }
 
 const server = setupServer(
+ http.get('/api/v1/setup/status', () => HttpResponse.json({ required: false, codeRequired: false })),
   http.get('/api/v1/session', () => HttpResponse.json(defaultSession)),
   http.get('/api/v1/accounts', () => HttpResponse.json({ accounts: defaultAccounts })),
   http.get('/api/v1/fleet', () => HttpResponse.json(defaultFleet)),

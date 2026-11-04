@@ -26,7 +26,7 @@ func (api *API) password(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	token, err := api.dependencies.Identity.Password(r.Context(), input.Username, input.Password, ClientIP(r, api.dependencies.Config.TrustLocalProxy))
+	token, err := api.dependencies.Identity.Password(r.Context(), input.Username, input.Password, ClientIP(r))
 	result := "challenge"
 	if err != nil {
 		result = "failure"
@@ -39,7 +39,7 @@ func (api *API) password(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 401, "authentication_failed")
 		return
 	}
-	api.cookie(w, api.challengeCookie, token, 300)
+	api.cookie(w, api.policy.Load().challengeCookie, token, 300)
 	writeJSON(w, 200, map[string]bool{"challengeRequired": true})
 }
 
@@ -54,7 +54,7 @@ func (api *API) complete(w http.ResponseWriter, r *http.Request) {
 	}
 	api.authMutex.Lock()
 	defer api.authMutex.Unlock()
-	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"), identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: ClientIP(r, api.dependencies.Config.TrustLocalProxy)})
+	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.policy.Load().challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"), identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: ClientIP(r)})
 	if err != nil {
 		if api.event(r, "login", "failure", "", "") != nil {
 			fail(w, r, 503, "audit_unavailable")
@@ -75,8 +75,8 @@ func (api *API) complete(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 503, "audit_unavailable")
 		return
 	}
-	api.cookie(w, api.challengeCookie, "", -1)
-	api.cookie(w, api.sessionCookie, token, 0)
+	api.cookie(w, api.policy.Load().challengeCookie, "", -1)
+	api.cookie(w, api.policy.Load().sessionCookie, token, 0)
 	api.session(w, r)
 }
 
@@ -91,13 +91,13 @@ func (api *API) logout(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "logout", "", "") {
 		return
 	}
-	if api.dependencies.Identity.Revoke(r.Context(), api.token(r, api.sessionCookie)) != nil {
+	if api.dependencies.Identity.Revoke(r.Context(), api.token(r, api.policy.Load().sessionCookie)) != nil {
 		fail(w, r, 503, "unavailable")
 		return
 	}
 	api.dependencies.Terminal.CloseBySession(currentSession(r).Hash)
-	api.cookie(w, api.sessionCookie, "", -1)
-	api.cookie(w, api.challengeCookie, "", -1)
+	api.cookie(w, api.policy.Load().sessionCookie, "", -1)
+	api.cookie(w, api.policy.Load().challengeCookie, "", -1)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -113,7 +113,7 @@ func (api *API) reauthenticate(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "reauthentication", "", "") {
 		return
 	}
-	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.sessionCookie), input.Password, "", ClientIP(r, api.dependencies.Config.TrustLocalProxy), "reauthenticate")
+	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), input.Password, "", ClientIP(r), "reauthenticate")
 	if err != nil {
 		fail(w, r, 401, "authentication_failed")
 		return
@@ -141,6 +141,6 @@ func (api *API) reauthenticate(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 503, "audit_unavailable")
 		return
 	}
-	api.cookie(w, api.sessionCookie, token, 0)
+	api.cookie(w, api.policy.Load().sessionCookie, token, 0)
 	api.session(w, r)
 }

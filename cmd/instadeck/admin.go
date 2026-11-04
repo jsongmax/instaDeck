@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"golang.org/x/term"
+	"instadeck/internal/config"
 	"instadeck/internal/identity"
 	"instadeck/internal/keyring"
 	"instadeck/internal/store/sqlite"
@@ -20,13 +21,32 @@ func admin(ctx context.Context, arguments []string, input io.Reader, output io.W
 	if len(arguments) == 0 {
 		return errors.New("admin command required")
 	}
-	keyPath := os.Getenv("INSTADECK_MASTER_KEY_FILE")
-	databasePath := os.Getenv("INSTADECK_DATABASE")
-	if keyPath == "" {
-		return errors.New("master key file required")
+	configuration, err := config.Load()
+	if err != nil {
+		return err
 	}
-	if databasePath == "" {
-		databasePath = "instadeck.db"
+	if err = os.MkdirAll(configuration.DataDir, 0700); err != nil {
+		return err
+	}
+	keyPath, databasePath := configuration.MasterKeyPath, configuration.DatabasePath
+	if arguments[0] == "set-origin" {
+		if len(arguments) != 2 {
+			return errors.New("usage: admin set-origin <url>")
+		}
+		origin, err := config.ValidateOrigin(arguments[1])
+		if err != nil {
+			return err
+		}
+		store, err := sqlite.Open(ctx, databasePath)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		if err = store.SetPanelOrigin(ctx, origin); err != nil {
+			return err
+		}
+		fmt.Fprintln(output, "Origin updated; restart the service. INSTADECK_ORIGIN overrides this setting.")
+		return nil
 	}
 	if arguments[0] == "generate-key" {
 		if len(arguments) != 1 {
@@ -65,7 +85,7 @@ func admin(ctx context.Context, arguments []string, input io.Reader, output io.W
 	switch arguments[0] {
 	case "init", "reset-auth":
 		if len(arguments) > 2 {
-			return errors.New("usage: admin init|reset-auth [username]; reset-auth requires access to the master key and database; restart the service afterwards to close terminals it still has open")
+			return errors.New("usage: admin init|reset-auth [username]; reset-auth is for loss of both authenticator and recovery codes; requires access to the master key and database; restart the service afterwards to close terminals it still has open")
 		}
 		name := "admin"
 		if len(arguments) == 2 {

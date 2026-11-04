@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,8 @@ type AuditStore interface {
 // Dependencies contains the assembled services and public origin.
 type Dependencies struct {
 	Config             config.Config
+	SetupStore         SetupStore
+	SetupOutput        io.Writer
 	Identity           *identity.Service
 	Accounts           *account.Service
 	Fleet              *fleet.Service
@@ -51,11 +54,11 @@ type Dependencies struct {
 
 // API owns the closed public route set and authenticated business group.
 type API struct {
-	dependencies                   Dependencies
-	router                         *chi.Mux
-	secure                         bool
-	sessionCookie, challengeCookie string
-	authMutex                      sync.Mutex
+	dependencies Dependencies
+	router       *chi.Mux
+	policy       atomic.Pointer[originPolicy]
+	setup        setupState
+	authMutex    sync.Mutex
 }
 
 type contextKey int
@@ -88,13 +91,16 @@ func New(dependencies Dependencies) (*API, error) {
 	if dependencies.Logger == nil {
 		dependencies.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	api := &API{dependencies: dependencies, router: chi.NewRouter(), secure: strings.HasPrefix(validated.Origin, "https://"), sessionCookie: "instadeck_session", challengeCookie: "instadeck_challenge"}
-	if api.secure {
-		api.sessionCookie = "__Host-" + api.sessionCookie
-		api.challengeCookie = "__Host-" + api.challengeCookie
+	api := &API{dependencies: dependencies, router: chi.NewRouter()}
+	api.setOrigin(validated.Origin)
+	if err := api.initializeSetup(); err != nil {
+		return nil, err
 	}
 	api.router.Use(api.boundary)
 	api.router.Route("/api/v1", func(router chi.Router) {
+		router.Get("/setup/status", api.setupStatus)
+		router.Post("/setup/start", api.setupStart)
+		router.Post("/setup/complete", api.setupComplete)
 		router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 		router.Group(func(public chi.Router) {
 			public.Use(api.origin)
@@ -225,7 +231,7 @@ func (api *API) boundary(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; style-src 'self' 'unsafe-inline'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		if api.secure {
+		if api.policy.Load().secure {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		wrapped := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -240,6 +246,10 @@ func (api *API) boundary(next http.Handler) http.Handler {
 			}
 			api.dependencies.Logger.Info("request", "method", r.Method, "route", chi.RouteContext(r.Context()).RoutePattern(), "status", status, "duration", time.Since(started), "requestId", requestID)
 		}()
+		if api.policy.Load().origin == "" && !strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && (r.Method != "GET" || r.URL.Path == "/api/v1/terminal/ws") {
+			fail(wrapped, r, 403, "origin_rejected")
+			return
+		}
 		next.ServeHTTP(wrapped, r)
 	})
 }
@@ -247,7 +257,7 @@ func (api *API) boundary(next http.Handler) http.Handler {
 func (api *API) origin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.URL.Path == "/api/v1/terminal/ws" {
-			if values := r.Header.Values("Origin"); len(values) != 1 || values[0] != api.dependencies.Config.Origin {
+			if values := r.Header.Values("Origin"); api.policy.Load().origin == "" || len(values) != 1 || values[0] != api.policy.Load().origin {
 				fail(w, r, 403, "origin_rejected")
 				return
 			}
@@ -258,7 +268,7 @@ func (api *API) origin(next http.Handler) http.Handler {
 
 func (api *API) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := api.token(r, api.sessionCookie)
+		token := api.token(r, api.policy.Load().sessionCookie)
 		session, err := api.dependencies.Identity.Session(r.Context(), token)
 		if token == "" || err != nil {
 			fail(w, r, 401, "unauthorized")
@@ -300,11 +310,11 @@ func (api *API) token(r *http.Request, name string) string {
 }
 
 func (api *API) cookie(w http.ResponseWriter, name, value string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: api.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
+	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", Secure: api.policy.Load().secure, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
 }
 
 // ClientIP trusts only the rightmost forwarded hop from a local proxy connection.
-func ClientIP(r *http.Request, trustLocalProxy bool) string {
+func ClientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -313,7 +323,7 @@ func ClientIP(r *http.Request, trustLocalProxy bool) string {
 	if err != nil {
 		return "invalid"
 	}
-	if trustLocalProxy && address.Unmap().IsLoopback() {
+	if address.Unmap().IsLoopback() {
 		values := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
 		if values != "" {
 			hops := strings.Split(values, ",")
@@ -329,7 +339,7 @@ func ClientIP(r *http.Request, trustLocalProxy bool) string {
 
 func (api *API) event(r *http.Request, kind, result, credentialID, machineID string) error {
 	requestID, _ := r.Context().Value(requestIDKey).(string)
-	return api.dependencies.Audit.WriteEvent(r.Context(), audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: ClientIP(r, api.dependencies.Config.TrustLocalProxy)})
+	return api.dependencies.Audit.WriteEvent(r.Context(), audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: ClientIP(r)})
 }
 
 func (api *API) requireAudit(w http.ResponseWriter, r *http.Request, kind, credentialID, machineID string) bool {

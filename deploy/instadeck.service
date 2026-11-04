@@ -8,9 +8,7 @@ Type=simple
 User=instadeck
 Group=instadeck
 WorkingDirectory=/var/lib/instadeck
-EnvironmentFile=/etc/instadeck/instadeck.env
-LoadCredential=master.key:/etc/instadeck/master.key
-Environment=INSTADECK_MASTER_KEY_FILE=%d/master.key
+Environment=INSTADECK_DATA_DIR=/var/lib/instadeck
 ExecStart=/opt/instadeck/instadeck serve
 Restart=on-failure
 RestartSec=5s

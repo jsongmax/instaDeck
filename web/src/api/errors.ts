@@ -21,6 +21,12 @@ export class ApiError extends Error {
 }
 
 const ERROR_CODE_MAP: Record<string, string> = {
+  https_required: '请通过 HTTPS 访问，或在服务器本机用 127.0.0.1 打开',
+  origin_rejected: '访问地址校验失败，请使用面板的正确网址',
+  already_initialized: '面板已完成设置，请登录',
+  invalid_setup_code: '设置码错误，请查看服务器日志',
+  invalid_request: '输入内容无效，请检查后重试',
+
   confirmation_mismatch: '确认名称不匹配',
   capability_denied: '该账号 Key 没有此操作的权限',
   machine_not_visible: '找不到该机器或当前账号不可见',

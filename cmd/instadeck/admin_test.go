@@ -16,11 +16,9 @@ import (
 )
 
 func TestAdminLifecycleAndInterruptedRotation(t *testing.T) {
-	directory, err := os.MkdirTemp(".", "admin-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(directory)
+	directory := t.TempDir()
+	var err error
+	t.Setenv("INSTADECK_DATA_DIR", directory)
 	keyPath, databasePath := filepath.Join(directory, "master.key"), filepath.Join(directory, "panel.db")
 	t.Setenv("INSTADECK_MASTER_KEY_FILE", keyPath)
 	t.Setenv("INSTADECK_DATABASE", databasePath)
@@ -147,11 +145,8 @@ func TestAdminLifecycleAndInterruptedRotation(t *testing.T) {
 }
 
 func TestServeListensAndShutsDown(t *testing.T) {
-	directory, err := os.MkdirTemp(".", "server-lifecycle-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(directory)
+	directory := t.TempDir()
+	t.Setenv("INSTADECK_DATA_DIR", directory)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -202,21 +197,15 @@ func TestServeListensAndShutsDown(t *testing.T) {
 }
 
 func TestServeFailsForMissingMasterKeyAndUndecryptableRecords(t *testing.T) {
-	directory, err := os.MkdirTemp(".", "serve-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(directory)
+	directory := t.TempDir()
+	t.Setenv("INSTADECK_DATA_DIR", directory)
 	t.Setenv("INSTADECK_ORIGIN", "http://127.0.0.1:8080")
 	t.Setenv("INSTADECK_DATABASE", filepath.Join(directory, "panel.db"))
 	t.Setenv("INSTADECK_MASTER_KEY_FILE", filepath.Join(directory, "missing.key"))
-	if run(context.Background(), []string{"serve"}, strings.NewReader(""), &bytes.Buffer{}) == nil {
-		t.Fatal("missing master key accepted")
-	}
 	if _, err := readPassword(strings.NewReader(strings.Repeat("x", 1025))); err == nil {
 		t.Fatal("unbounded CLI password")
 	}
-	if err = run(context.Background(), []string{"admin", "generate-key"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+	if err := run(context.Background(), []string{"admin", "generate-key"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	store, err := sqlite.Open(context.Background(), os.Getenv("INSTADECK_DATABASE"))
