@@ -17,7 +17,7 @@ func (s *Store) CreateAdministrator(ctx context.Context, administrator identity.
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO administrator (id,username,password,key_version,nonce,ciphertext,last_totp_step) VALUES (?,?,?,?,?,?,?)`, administrator.ID, administrator.Username, password, administrator.TOTP.KeyVersion, administrator.TOTP.Nonce, administrator.TOTP.Ciphertext, administrator.LastTOTPStep)
+		_, err = tx.ExecContext(ctx, `INSERT INTO administrator (id,username,password,key_version,nonce,ciphertext,last_totp_step,totp_bound_at) VALUES (?,?,?,?,?,?,?,?)`, administrator.ID, administrator.Username, password, administrator.TOTP.KeyVersion, administrator.TOTP.Nonce, administrator.TOTP.Ciphertext, administrator.LastTOTPStep, administrator.TOTPBoundAt.UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -33,10 +33,12 @@ func (s *Store) CreateAdministrator(ctx context.Context, administrator identity.
 func (s *Store) administrator(ctx context.Context, column, value string) (identity.Administrator, error) {
 	var administrator identity.Administrator
 	var password []byte
-	err := s.reader.QueryRowContext(ctx, "SELECT id, username, password, key_version, nonce, ciphertext, last_totp_step FROM administrator WHERE "+column+" = ?", value).Scan(&administrator.ID, &administrator.Username, &password, &administrator.TOTP.KeyVersion, &administrator.TOTP.Nonce, &administrator.TOTP.Ciphertext, &administrator.LastTOTPStep)
+	var boundAt int64
+	err := s.reader.QueryRowContext(ctx, "SELECT id, username, password, key_version, nonce, ciphertext, last_totp_step, totp_bound_at, revision FROM administrator WHERE "+column+" = ?", value).Scan(&administrator.ID, &administrator.Username, &password, &administrator.TOTP.KeyVersion, &administrator.TOTP.Nonce, &administrator.TOTP.Ciphertext, &administrator.LastTOTPStep, &boundAt, &administrator.Revision)
 	if err != nil {
 		return identity.Administrator{}, storageError(err)
 	}
+	administrator.TOTPBoundAt = time.UnixMilli(boundAt).UTC()
 	if json.Unmarshal(password, &administrator.Password) != nil {
 		return identity.Administrator{}, ErrRejected
 	}
@@ -94,7 +96,7 @@ func (s *Store) AtomicTakeChallenge(ctx context.Context, hash [32]byte, now time
 }
 
 func insertSession(ctx context.Context, tx *sql.Tx, session identity.Session) error {
-	_, err := tx.ExecContext(ctx, "INSERT INTO sessions (hash,administrator_id,csrf_secret,created_at,last_seen,authenticated_at,revoked) VALUES (?,?,?,?,?,?,?)", session.Hash[:], session.AdministratorID, session.CSRFSecret, session.CreatedAt.UnixMilli(), session.LastSeen.UnixMilli(), session.AuthenticatedAt.UnixMilli(), session.Revoked)
+	_, err := tx.ExecContext(ctx, "INSERT INTO sessions (public_id,device,source_address,hash,administrator_id,csrf_secret,created_at,last_seen,authenticated_at,revoked) VALUES (?,?,?,?,?,?,?,?,?,?)", session.PublicID, session.Device, session.SourceAddress, session.Hash[:], session.AdministratorID, session.CSRFSecret, session.CreatedAt.UnixMilli(), session.LastSeen.UnixMilli(), session.AuthenticatedAt.UnixMilli(), session.Revoked)
 	return err
 }
 
@@ -139,7 +141,7 @@ func (s *Store) CreateSession(ctx context.Context, session identity.Session) err
 func useSession(ctx context.Context, tx *sql.Tx, hash [32]byte, now time.Time, idle, absolute time.Duration) (identity.Session, error) {
 	var session identity.Session
 	var created, lastSeen, authenticated int64
-	err := tx.QueryRowContext(ctx, "SELECT administrator_id,csrf_secret,created_at,last_seen,authenticated_at,revoked FROM sessions WHERE hash=?", hash[:]).Scan(&session.AdministratorID, &session.CSRFSecret, &created, &lastSeen, &authenticated, &session.Revoked)
+	err := tx.QueryRowContext(ctx, "SELECT public_id,device,source_address,administrator_id,csrf_secret,created_at,last_seen,authenticated_at,revoked FROM sessions WHERE hash=?", hash[:]).Scan(&session.PublicID, &session.Device, &session.SourceAddress, &session.AdministratorID, &session.CSRFSecret, &created, &lastSeen, &authenticated, &session.Revoked)
 	session.Hash = hash
 	session.CreatedAt = time.UnixMilli(created).UTC()
 	session.LastSeen = time.UnixMilli(lastSeen).UTC()
@@ -195,6 +197,9 @@ func (s *Store) AtomicRotateSession(ctx context.Context, hash [32]byte, step int
 		if _, err = tx.ExecContext(ctx, "DELETE FROM sessions WHERE hash=?", hash[:]); err != nil {
 			return err
 		}
+		replacement.PublicID = old.PublicID
+		replacement.Device = old.Device
+		replacement.SourceAddress = old.SourceAddress
 		replacement.CreatedAt = old.CreatedAt
 		replacement.LastSeen = now
 		replacement.AuthenticatedAt = now

@@ -63,16 +63,22 @@ func admin(ctx context.Context, arguments []string, input io.Reader, output io.W
 	}
 	defer store.Close()
 	switch arguments[0] {
-	case "init":
+	case "init", "reset-auth":
 		if len(arguments) > 2 {
-			return errors.New("usage: admin init [username]")
+			return errors.New("usage: admin init|reset-auth [username]; reset-auth requires access to the master key and database; restart the service afterwards to close terminals it still has open")
 		}
 		name := "admin"
 		if len(arguments) == 2 {
 			name = arguments[1]
 		}
-		if err = requireUninitialized(ctx, databasePath); err != nil {
-			return err
+		if arguments[0] == "init" {
+			if err = requireUninitialized(ctx, databasePath); err != nil {
+				return err
+			}
+		} else {
+			if _, err = store.AdministratorByName(ctx, name); err != nil {
+				return errors.New("existing administrator required")
+			}
 		}
 		password, err := readPassword(input)
 		if err != nil {
@@ -87,7 +93,12 @@ func admin(ctx context.Context, arguments []string, input io.Reader, output io.W
 		if err != nil {
 			return err
 		}
-		codes, err := service.Initialize(ctx, "administrator", name, password, secret)
+		var codes []string
+		if arguments[0] == "reset-auth" {
+			codes, err = service.ResetAuth(ctx, name, password, secret)
+		} else {
+			codes, err = service.Initialize(ctx, "administrator", name, password, secret)
+		}
 		if err != nil {
 			return errors.New("administrator initialization failed")
 		}

@@ -59,3 +59,17 @@ func TestDecodeRejectsOversizeAndTrailingJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceSummaryRetainsOnlyCoarseMetadata(t *testing.T) {
+	for _, test := range []struct{ userAgent, expected string }{
+		{userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 private-device-id", expected: "Chrome · Windows"},
+		{userAgent: "Mozilla/5.0 (Macintosh) Chrome/120.0 Edg/120.0", expected: "Edge · macOS"},
+		{userAgent: "Mozilla/5.0 (iPhone) Version/17 Safari/605", expected: "Safari · iOS"},
+		{userAgent: "Mozilla/5.0 (Linux) Firefox/120", expected: "Firefox · Linux"},
+		{userAgent: "private-device-id", expected: "未知设备"},
+	} {
+		if actual := deviceSummary(test.userAgent); actual != test.expected {
+			t.Fatalf("device = %q, want %q", actual, test.expected)
+		}
+	}
+}

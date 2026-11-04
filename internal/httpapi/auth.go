@@ -52,7 +52,9 @@ func (api *API) complete(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"))
+	api.authMutex.Lock()
+	defer api.authMutex.Unlock()
+	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"), identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: ClientIP(r, api.dependencies.Config.TrustLocalProxy)})
 	if err != nil {
 		if api.event(r, "login", "failure", "", "") != nil {
 			fail(w, r, 503, "audit_unavailable")
@@ -108,12 +110,17 @@ func (api *API) reauthenticate(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	api.authMutex.Lock()
-	defer api.authMutex.Unlock()
 	if !api.requireAudit(w, r, "reauthentication", "", "") {
 		return
 	}
-	token, err := api.dependencies.Identity.Reauthenticate(r.Context(), api.token(r, api.sessionCookie), input.Password, input.Code, ClientIP(r, api.dependencies.Config.TrustLocalProxy))
+	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.sessionCookie), input.Password, "", ClientIP(r, api.dependencies.Config.TrustLocalProxy), "reauthenticate")
+	if err != nil {
+		fail(w, r, 401, "authentication_failed")
+		return
+	}
+	api.authMutex.Lock()
+	defer api.authMutex.Unlock()
+	token, err := api.dependencies.Identity.CompleteReauthentication(r.Context(), preparation, input.Code)
 	if err != nil {
 		_ = api.event(r, "reauthentication", "failure", "", "")
 		fail(w, r, 401, "authentication_failed")

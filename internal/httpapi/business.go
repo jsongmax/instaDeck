@@ -16,6 +16,7 @@ import (
 )
 
 func (api *API) registerBusiness(router chi.Router) {
+	api.registerSecurity(router)
 	router.Get("/session", api.session)
 	router.Post("/auth/logout", api.logout)
 	router.Post("/auth/reauthenticate", api.reauthenticate)

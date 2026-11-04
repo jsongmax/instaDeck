@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -18,6 +19,8 @@ type Administrator struct {
 	Password       PasswordHash
 	TOTP           keyring.Envelope
 	LastTOTPStep   int64
+	TOTPBoundAt    time.Time
+	Revision       int64
 	RecoveryHashes [][32]byte
 }
 type Challenge struct {
@@ -27,6 +30,7 @@ type Challenge struct {
 	Attempts        int
 }
 type Session struct {
+	PublicID, Device, SourceAddress      string
 	Hash                                 [32]byte
 	AdministratorID, CSRFSecret          string
 	CreatedAt, LastSeen, AuthenticatedAt time.Time
@@ -54,6 +58,8 @@ type Options struct {
 	ChallengeAttempts                             int
 }
 type Service struct {
+	pendingMutex sync.Mutex
+	pending      *pendingTOTP
 	secondFactor secondFactorBudget
 	repo         Repository
 	cipher       Cipher
@@ -99,7 +105,7 @@ func (s *Service) Initialize(ctx context.Context, id, name, password string, sec
 	if e != nil {
 		return nil, e
 	}
-	e = s.repo.CreateAdministrator(ctx, Administrator{ID: id, Username: name, Password: h, TOTP: enc, LastTOTPStep: -1, RecoveryHashes: hashes})
+	e = s.repo.CreateAdministrator(ctx, Administrator{ID: id, Username: name, Password: h, TOTP: enc, LastTOTPStep: -1, TOTPBoundAt: s.now(), RecoveryHashes: hashes})
 	if e != nil {
 		return nil, fmt.Errorf("administrator storage failed")
 	}
@@ -122,7 +128,12 @@ func (s *Service) Password(ctx context.Context, name, password, ip string) (stri
 	if e != nil {
 		return "", e
 	}
-	e = s.repo.CreateChallenge(ctx, Challenge{TokenHash(token), a.ID, s.now().Add(s.options.ChallengeTTL), s.options.ChallengeAttempts})
+	challenge := Challenge{Hash: TokenHash(token), AdministratorID: a.ID, ExpiresAt: s.now().Add(s.options.ChallengeTTL), Attempts: s.options.ChallengeAttempts}
+	if repository, ok := s.repo.(SecurityRepository); ok {
+		e = repository.CreateVerifiedChallenge(ctx, challenge, a.Revision)
+	} else {
+		e = s.repo.CreateChallenge(ctx, challenge)
+	}
 	if e != nil {
 		return "", fmt.Errorf("challenge storage failed")
 	}
@@ -137,9 +148,13 @@ func (s *Service) newSession(id string, now time.Time) (Session, string, error) 
 	if e != nil {
 		return Session{}, "", e
 	}
-	return Session{Hash: TokenHash(token), AdministratorID: id, CSRFSecret: csrf, CreatedAt: now, LastSeen: now, AuthenticatedAt: now}, token, nil
+	publicID, e := randomToken()
+	if e != nil {
+		return Session{}, "", e
+	}
+	return Session{PublicID: publicID, Device: "未知设备", Hash: TokenHash(token), AdministratorID: id, CSRFSecret: csrf, CreatedAt: now, LastSeen: now, AuthenticatedAt: now}, token, nil
 }
-func (s *Service) Complete(ctx context.Context, challenge, code string, recovery bool) (token string, err error) {
+func (s *Service) Complete(ctx context.Context, challenge, code string, recovery bool, metadata ...SessionMetadata) (token string, err error) {
 	now := s.now()
 	h := TokenHash(challenge)
 	c, e := s.repo.AtomicTakeChallenge(ctx, h, now)
@@ -165,6 +180,10 @@ func (s *Service) Complete(ctx context.Context, challenge, code string, recovery
 	session, token, e := s.newSession(a.ID, now)
 	if e != nil {
 		return "", e
+	}
+	if len(metadata) > 0 {
+		session.Device = metadata[0].Device
+		session.SourceAddress = metadata[0].SourceAddress
 	}
 	if recovery {
 		e = s.repo.AtomicCompleteRecovery(ctx, h, TokenHash(code), session, now)
@@ -204,19 +223,24 @@ func (s *Service) RecentlyAuthenticated(session Session) bool {
 	age := s.now().Sub(session.AuthenticatedAt)
 	return age >= 0 && age < s.options.RecentTTL
 }
-func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip string) (replacementToken string, err error) {
-	if !s.limiter.Allow(ip, s.now()) {
-		return "", fmt.Errorf("login rate limited")
+
+// Reauthenticate verifies credentials and rotates a session.
+func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip string) (string, error) {
+	preparation, err := s.PrepareSecurity(ctx, token, password, "", ip, "reauthenticate")
+	if err != nil {
+		return "", err
 	}
-	old, e := s.Session(ctx, token)
-	if e != nil {
-		return "", e
-	}
-	a, e := s.repo.AdministratorByID(ctx, old.AdministratorID)
-	if e != nil {
+	return s.CompleteReauthentication(ctx, preparation, code)
+}
+
+// CompleteReauthentication commits a password-verified snapshot after the caller takes its lifecycle lock.
+func (s *Service) CompleteReauthentication(ctx context.Context, preparation SecurityPreparation, code string) (replacementToken string, err error) {
+	old, err := s.repo.AtomicUseSession(ctx, preparation.session.Hash, s.now(), s.options.IdleTTL, s.options.AbsoluteTTL)
+	if err != nil {
 		return "", fmt.Errorf("authentication failed")
 	}
-	if !VerifyPassword(a.Password, password) {
+	administrator, err := s.repo.AdministratorByID(ctx, old.AdministratorID)
+	if err != nil || administrator.Revision != preparation.administrator.Revision {
 		return "", fmt.Errorf("authentication failed")
 	}
 	s.secondFactor.mutex.Lock()
@@ -230,19 +254,22 @@ func (s *Service) Reauthenticate(ctx context.Context, token, password, code, ip 
 		}
 		s.secondFactor.mutex.Unlock()
 	}()
-	secret, e := s.cipher.Decrypt(a.TOTP, totpAAD())
+	secret, e := s.cipher.Decrypt(administrator.TOTP, totpAAD())
 	if e != nil {
 		return "", fmt.Errorf("authentication failed")
 	}
-	step, ok := MatchTOTP(secret, code, s.now(), a.LastTOTPStep)
+	step, ok := MatchTOTP(secret, code, s.now(), administrator.LastTOTPStep)
 	if !ok {
 		return "", fmt.Errorf("authentication failed")
 	}
-	replacement, newToken, e := s.newSession(a.ID, s.now())
+	replacement, newToken, e := s.newSession(administrator.ID, s.now())
 	if e != nil {
 		return "", e
 	}
 	replacement.CreatedAt = old.CreatedAt
+	replacement.PublicID = old.PublicID
+	replacement.Device = old.Device
+	replacement.SourceAddress = old.SourceAddress
 	e = s.repo.AtomicRotateSession(ctx, old.Hash, step, replacement, s.now(), s.options.IdleTTL, s.options.AbsoluteTTL)
 	if e != nil {
 		return "", fmt.Errorf("authentication failed")

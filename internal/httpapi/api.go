@@ -141,6 +141,14 @@ func fail(w http.ResponseWriter, r *http.Request, status int, code string) {
 		message = "Origin rejected."
 	case "csrf_rejected":
 		message = "CSRF token rejected."
+	case "weak_password":
+		message = "Password must contain at least 12 characters and at most 1024 bytes."
+	case "password_unchanged":
+		message = "New password must differ from the current password."
+	case "totp_pending_missing":
+		message = "Pending authenticator is missing or expired."
+	case "cannot_revoke_current":
+		message = "Use logout to revoke the current session."
 	case "invalid_request":
 		message = "Invalid request."
 	case "not_found":

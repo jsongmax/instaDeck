@@ -39,7 +39,7 @@ func identityOptions() identity.Options {
 
 func run(ctx context.Context, arguments []string, input io.Reader, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: instadeck serve | admin init|generate-key|backup|rotate-key")
+		return errors.New("usage: instadeck serve | admin init|generate-key|backup|rotate-key|reset-auth [username] (reset-auth requires access to the master key and database)")
 	}
 	if arguments[0] == "admin" {
 		return admin(ctx, arguments[1:], input, output)
@@ -77,7 +77,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	if err != nil {
 		return err
 	}
-	terminals, err := terminal.New(httpapi.TerminalUpstream{Accounts: accounts}, terminal.Options{})
+	terminals, err := terminal.New(httpapi.TerminalUpstream{Accounts: accounts}, terminal.Options{PerSessionLimit: 8, GlobalLimit: 8})
 	if err != nil {
 		return err
 	}
