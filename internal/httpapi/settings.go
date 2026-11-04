@@ -27,6 +27,9 @@ func (api *API) loadSwitches(ctx context.Context) error {
 func (api *API) applySwitch(key string, enabled bool) {
 	switch key {
 	case settingBlockInternalSSH:
+		if api.dependencies.Notify != nil {
+			api.dependencies.Notify.SetAddressFilter(enabled)
+		}
 		if api.dependencies.Terminal != nil {
 			api.dependencies.Terminal.SetAddressFilter(enabled)
 		}

@@ -6,6 +6,7 @@ import (
 	"instadeck/internal/account"
 	"instadeck/internal/audit"
 	"instadeck/internal/operation"
+	"strings"
 	"time"
 )
 
@@ -178,8 +179,9 @@ var _ audit.Writer = (*Store)(nil)
 
 // AuditRecord pairs an audit event with its persistent cursor.
 type AuditRecord struct {
-	Cursor int64
-	Event  audit.Event
+	OperationKind string `json:"operationKind,omitempty"`
+	Cursor        int64
+	Event         audit.Event
 }
 
 // WriteEvent appends a sanitized audit event.
@@ -193,10 +195,64 @@ func (s *Store) WriteEvent(ctx context.Context, event audit.Event) error {
 
 // ReadAuditEvents reads ascending cursor pages; pass the last cursor for the next page.
 func (s *Store) ReadAuditEvents(ctx context.Context, after int64, limit int) ([]AuditRecord, error) {
-	if after < 0 || limit < 1 || limit > 1000 {
+	return s.FilterAuditEvents(ctx, after, limit, AuditFilter{})
+}
+
+// AuditFilter contains exact account/machine/result and literal event-type prefix filters.
+type AuditFilter struct {
+	CredentialID, MachineID, Type, Result string
+	MachineIDs                            []string
+	Since, Until                          *time.Time
+	// Descending returns newest first, with the after argument of FilterAuditEvents
+	// ignored and Before as the exclusive cursor (0 starts from the newest).
+	Descending bool
+	Before     int64
+}
+
+func (s *Store) FilterAuditEvents(ctx context.Context, after int64, limit int, filter AuditFilter) ([]AuditRecord, error) {
+	if after < 0 || limit < 1 || limit > 10000 {
 		return nil, ErrRejected
 	}
-	rows, err := s.reader.QueryContext(ctx, "SELECT id,time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail FROM audit_events WHERE id>? ORDER BY id LIMIT ?", after, limit)
+	clauses := []string{"id>?"}
+	args := []any{after}
+	order := "id"
+	if filter.Descending {
+		order = "id DESC"
+		args[0] = 0
+		if filter.Before > 0 {
+			clauses = append(clauses, "id<?")
+			args = append(args, filter.Before)
+		}
+	}
+	for _, item := range []struct{ column, value string }{{"credential_id", filter.CredentialID}, {"machine_id", filter.MachineID}, {"result", filter.Result}} {
+		if item.value != "" {
+			clauses = append(clauses, item.column+"=?")
+			args = append(args, item.value)
+		}
+	}
+	if len(filter.MachineIDs) > 0 {
+		if len(filter.MachineIDs) > 256 {
+			return nil, ErrRejected
+		}
+		clauses = append(clauses, "machine_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(filter.MachineIDs)), ",")+")")
+		for _, id := range filter.MachineIDs {
+			args = append(args, id)
+		}
+	}
+	if filter.Type != "" {
+		clauses = append(clauses, "substr(type,1,length(?))=?")
+		args = append(args, filter.Type, filter.Type)
+	}
+	if filter.Since != nil {
+		clauses = append(clauses, "time>=?")
+		args = append(args, filter.Since.UnixMilli())
+	}
+	if filter.Until != nil {
+		clauses = append(clauses, "time<=?")
+		args = append(args, filter.Until.UnixMilli())
+	}
+	args = append(args, limit)
+	rows, err := s.reader.QueryContext(ctx, "SELECT id,time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail,COALESCE((SELECT kind FROM actions WHERE actions.id=audit_events.action_id),'') FROM audit_events WHERE "+strings.Join(clauses, " AND ")+" ORDER BY "+order+" LIMIT ?", args...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -207,7 +263,7 @@ func (s *Store) ReadAuditEvents(ctx context.Context, after int64, limit int) ([]
 		var timestamp int64
 		var detail string
 		event := &record.Event
-		if rows.Scan(&record.Cursor, &timestamp, &event.Type, &event.SubjectID, &event.CredentialID, &event.MachineID, &event.ActionID, &event.Result, &event.RequestID, &event.SourceAddress, &detail) != nil {
+		if rows.Scan(&record.Cursor, &timestamp, &event.Type, &event.SubjectID, &event.CredentialID, &event.MachineID, &event.ActionID, &event.Result, &event.RequestID, &event.SourceAddress, &detail, &record.OperationKind) != nil {
 			return nil, ErrRejected
 		}
 		event.Time = time.UnixMilli(timestamp).UTC()

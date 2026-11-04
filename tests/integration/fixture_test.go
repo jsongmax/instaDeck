@@ -11,6 +11,7 @@ import (
 	"instadeck/internal/identity"
 	"instadeck/internal/instabox"
 	"instadeck/internal/keyring"
+	"instadeck/internal/notify"
 	"instadeck/internal/operation"
 	"instadeck/internal/store/sqlite"
 	"instadeck/internal/terminal"
@@ -59,6 +60,7 @@ type fixture struct {
 	upstream     *httptest.Server
 	failUpstream atomic.Bool
 	connection   func(http.ResponseWriter, *http.Request)
+	resource     func(http.ResponseWriter, *http.Request) bool
 	poll         func(http.ResponseWriter, *http.Request)
 	recovery     []string
 }
@@ -116,7 +118,7 @@ func newFixture(t *testing.T, trust bool, uninitialized ...bool) *fixture {
 	}
 	t.Cleanup(terminals.Shutdown)
 	t.Cleanup(actions.Stop)
-	fixture.dependencies = httpapi.Dependencies{Config: config.Config{Origin: "http://127.0.0.1:8080", MasterKeyPath: keyPath}, SetupStore: fixture.store, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: fixture.store, Logger: slog.New(slog.NewJSONHandler(&fixture.logs, nil)), Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>test SPA</html>")}}, AbsoluteSessionTTL: 8 * time.Hour}
+	fixture.dependencies = httpapi.Dependencies{Config: config.Config{Origin: "http://127.0.0.1:8080", MasterKeyPath: keyPath}, SetupStore: fixture.store, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Notify: notify.New(fixture.store, fixture.ring, slog.New(slog.NewJSONHandler(&fixture.logs, nil))), Audit: fixture.store, Logger: slog.New(slog.NewJSONHandler(&fixture.logs, nil)), Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>test SPA</html>")}}, AbsoluteSessionTTL: 8 * time.Hour}
 	fixture.api, err = httpapi.New(fixture.dependencies)
 	if err != nil {
 		t.Fatal(err)
@@ -133,6 +135,9 @@ func respond(w http.ResponseWriter, status int, value any) {
 func (fixture *fixture) upstreamHTTP(w http.ResponseWriter, r *http.Request) {
 	if fixture.failUpstream.Load() {
 		respond(w, 503, map[string]any{"error": map[string]any{"code": testKey, "message": testKey}})
+		return
+	}
+	if fixture.resource != nil && fixture.resource(w, r) {
 		return
 	}
 	switch {

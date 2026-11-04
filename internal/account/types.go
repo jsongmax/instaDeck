@@ -203,6 +203,9 @@ func FilterError(err error) *Failure {
 		case upstream.Code == "missing_scope":
 			result.Code = "missing_scope"
 			result.Retryable = false
+		case upstream.Code == "quota_exceeded":
+			result.Code = "quota_exceeded"
+			result.Retryable = false
 		case upstream.StatusCode == 429:
 			result.Code = "rate_limited"
 			result.Retryable = true

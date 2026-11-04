@@ -220,7 +220,7 @@ export const api = {
   createMachine: (params: {
     clientRequestId: string
     credentialId: string
-    body: { name: string; templateId: string; vcpus: number; memMiB: number }
+    body: { name: string; templateId?: string; snapshotId?: string; vcpus: number; memMiB: number }
   }) =>
     apiRequest<ActionRecord>('/machines', {
       method: 'POST',
@@ -255,11 +255,8 @@ export const api = {
       },
     ),
 
-  getAuditEvents: (after?: string) =>
-    apiRequest<AuditEventsResponse>(
-      after ? `/audit-events?after=${encodeURIComponent(after)}` : '/audit-events',
-      { method: 'GET' },
-    ),
+  getAuditEvents: (before?: string, filters: Record<string,string> = {}) =>
+    apiRequest<AuditEventsResponse>(`/audit-events?${new URLSearchParams({...filters,order:'desc',...(before ? {before} : {})})}`),
 
   getSecurity: () => apiRequest<SecurityInfo>('/security', { method: 'GET' }),
 

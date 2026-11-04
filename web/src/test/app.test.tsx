@@ -255,6 +255,9 @@ const defaultFleet: FleetResponse = {
 }
 
 const server = setupServer(
+  http.get('/api/v1/machines/:id/ports', () => HttpResponse.json({ enabled: true, ports: [] })),
+  http.get('/api/v1/snapshots', () => HttpResponse.json({ snapshots: [], errors: [] })),
+  http.get('/api/v1/notification-channels', () => HttpResponse.json({ channels: [] })),
  http.get('/api/v1/setup/status', () => HttpResponse.json({ required: false, codeRequired: false })),
   http.get('/api/v1/session', () => HttpResponse.json(defaultSession)),
   http.get('/api/v1/accounts', () => HttpResponse.json({ accounts: defaultAccounts })),

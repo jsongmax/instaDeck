@@ -49,7 +49,7 @@ type encryptedValue struct {
 
 func encryptedValues(ctx context.Context, connection *sql.Conn) ([]encryptedValue, error) {
 	values := []encryptedValue{}
-	for _, table := range []string{"administrator", "credentials"} {
+	for _, table := range []string{"administrator", "credentials", "notification_channels"} {
 		query := "SELECT id,key_version,nonce,ciphertext FROM " + table
 		if table == "credentials" {
 			query += " WHERE status<>'deleted'"
@@ -76,6 +76,9 @@ func encryptedValues(ctx context.Context, connection *sql.Conn) ([]encryptedValu
 }
 
 func valueAAD(value encryptedValue) []byte {
+	if value.table == "notification_channels" {
+		return []byte("instadeck:notification:" + value.id + ":v1")
+	}
 	if value.table == "administrator" {
 		return []byte("instadeck:administrator:totp:v1")
 	}

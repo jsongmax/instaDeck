@@ -251,13 +251,13 @@ export function SecurityPage() {
               checked={settingsQuery.data?.blockInternalSsh ?? true}
               disabled={!settingsQuery.data || settingBusy}
               onChange={(e) =>
-                void changeSetting({ blockInternalSsh: e.target.checked }, '拦截内网 SSH 地址')
+                void changeSetting({ blockInternalSsh: e.target.checked }, '拦截内网地址')
               }
             />
-            拦截内网 SSH 地址
+            拦截内网地址
           </label>
           <p className="muted">
-            打开终端时，面板会替你连接 InstaBox 返回的 SSH 地址。开启后，只连接公网地址，拒绝本机、内网和保留地址，防止错误或被篡改的地址让面板去访问你的内部服务。关闭后，任何地址都可能被连接。只有在本机代理使用 fake-IP（地址为 198.18.x.x）导致终端打不开时才建议关闭，并建议只在本地测试时使用；服务器部署请保持开启。SSH 服务器的身份校验不受此开关影响。
+            此开关同时作用于终端 SSH 和 Webhook。打开终端时，面板会替你连接 InstaBox 返回的 SSH 地址。开启后，只连接公网地址，拒绝本机、内网和保留地址，防止错误或被篡改的地址让面板去访问你的内部服务。关闭后，任何地址都可能被连接。只有在本机代理使用 fake-IP（地址为 198.18.x.x）导致终端打不开时才建议关闭，并建议只在本地测试时使用；服务器部署请保持开启。SSH 服务器的身份校验不受此开关影响。
           </p>
         </div>
         <p className="muted">关闭任一开关前，都需要重新验证身份。</p>

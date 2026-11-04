@@ -343,10 +343,12 @@ const SPEC_PRESETS = [
 function CreateMachineForm({
   accounts,
   defaultCredentialId,
+  snapshotId,
   onClose,
 }: {
   accounts: EnrichedAccount[]
   defaultCredentialId?: string
+  snapshotId?: string
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -354,7 +356,7 @@ function CreateMachineForm({
   const showToast = useAppStore((s) => s.showToast)
 
   const initialAcct =
-    accounts.find(
+    (snapshotId ? accounts.find(a=>a.credentialId===defaultCredentialId) : undefined) ?? accounts.find(
       (a) =>
         (!defaultCredentialId || a.credentialId === defaultCredentialId) &&
         a.status === 'valid' &&
@@ -376,7 +378,7 @@ function CreateMachineForm({
   const templatesQuery = useQuery({
     queryKey: ['templates', credentialId],
     queryFn: () => api.getTemplates(credentialId),
-    enabled: Boolean(credentialId),
+    enabled: Boolean(credentialId) && !snapshotId,
     staleTime: 30_000,
   })
 
@@ -433,7 +435,7 @@ function CreateMachineForm({
         credentialId,
         body: {
           name: trimmed,
-          templateId: activeTemplateId,
+          ...(snapshotId ? {snapshotId} : {templateId: activeTemplateId}),
           vcpus,
           memMiB,
         },
@@ -468,7 +470,7 @@ function CreateMachineForm({
         </legend>
         {accounts.map((a) => {
           const invalid = a.status === 'invalid' || Boolean(a.fleetInfo?.error)
-          const disabled = invalid || !a.enabled || a.isQuotaFull
+          const disabled = invalid || !a.enabled || a.isQuotaFull || Boolean(snapshotId && a.credentialId !== defaultCredentialId)
           let quotaText = ''
           if (invalid) {
             quotaText = 'Key 已失效'
@@ -516,7 +518,7 @@ function CreateMachineForm({
         />
       </label>
       <div className="grid2">
-        <label className="lbl" htmlFor="ct">
+        {!snapshotId ? <label className="lbl" htmlFor="ct">
           模板
           <select
             className="field wide"
@@ -534,7 +536,7 @@ function CreateMachineForm({
               <option value="default">default</option>
             )}
           </select>
-        </label>
+        </label> : <p className="muted">从快照新建机器：{snapshotId}</p>}
         <label className="lbl" htmlFor="cs">
           规格
           <select
@@ -572,11 +574,13 @@ export function CreateMachineDialog({
   open,
   accounts,
   defaultCredentialId,
+  snapshotId,
   onClose,
 }: {
   open: boolean
   accounts: EnrichedAccount[]
   defaultCredentialId?: string
+  snapshotId?: string
   onClose: () => void
 }) {
   return (
@@ -585,6 +589,7 @@ export function CreateMachineDialog({
         <CreateMachineForm
           accounts={accounts}
           defaultCredentialId={defaultCredentialId}
+          snapshotId={snapshotId}
           onClose={onClose}
         />
       ) : null}

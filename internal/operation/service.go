@@ -249,6 +249,9 @@ func (service *Service) launchLocked(action Action) {
 		return
 	}
 	service.active[action.ID] = true
+	if service.options.OnStarted != nil {
+		service.options.OnStarted(action)
+	}
 	service.workers.Add(1)
 	go func() {
 		defer service.workers.Done()
@@ -297,6 +300,9 @@ func (service *Service) save(ctx context.Context, action *Action) bool {
 			err = service.repository.UpdateAction(ctx, *action)
 		}
 		if err == nil {
+			if final && service.options.OnFinished != nil {
+				service.options.OnFinished(*action)
+			}
 			return true
 		}
 		if ctx.Err() != nil || attempt == saveAttempts-1 {

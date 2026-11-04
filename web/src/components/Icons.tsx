@@ -13,6 +13,8 @@ export type IconName =
   | 'plus'
   | 'shield'
   | 'palette'
+  | 'snapshot'
+  | 'bell'
 
 export function Icon({ name }: { name: IconName }) {
   let content: ReactNode = null
@@ -119,6 +121,28 @@ export function Icon({ name }: { name: IconName }) {
           stroke="currentColor"
           strokeWidth="1.7"
           strokeLinecap="round"
+        />
+      )
+      break
+    case 'snapshot':
+      content = (
+        <path
+          d="M2.5 5.5h2.2l1-1.7h4.6l1 1.7h2.2v7.2h-11zM8 11a2.1 2.1 0 1 0 0-4.2A2.1 2.1 0 0 0 8 11z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+      )
+      break
+    case 'bell':
+      content = (
+        <path
+          d="M4 11.5V7.3a4 4 0 0 1 8 0v4.2l1.2 1H2.8zM6.7 12.5a1.3 1.3 0 0 0 2.6 0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
         />
       )
       break

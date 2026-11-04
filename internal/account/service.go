@@ -19,6 +19,7 @@ type Service struct {
 	encryptor  Encryptor
 	factory    Factory
 	now        func() time.Time
+	OnInvalid  func(DTO)
 }
 
 // New constructs a service with an injectable clock and upstream factory.
@@ -293,6 +294,9 @@ func (service *Service) Observe(ctx context.Context, id string, version int, cap
 			return nil
 		}
 		if _, err = service.save(ctx, record); err == nil {
+			if status == "valid" && record.Status == "invalid" && service.OnInvalid != nil {
+				service.OnInvalid(dto(record))
+			}
 			return nil
 		}
 		if ctx.Err() != nil {

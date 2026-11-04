@@ -11,6 +11,8 @@ import { SetupGate } from './components/SetupWizard'
 import { LoginOverlay } from './components/LoginOverlay'
 import { MachineDrawer } from './components/MachineDrawer'
 import { MachinesPage } from './components/MachinesPage'
+import { SnapshotsPage } from './components/SnapshotsPage'
+import { NotificationsPage } from './components/NotificationsPage'
 import { SecurityPage } from './components/SecurityPage'
 import { TerminalDock, TerminalWindowsLayer } from './components/TerminalWindow'
 import { useFleetData } from './hooks/useFleetData'
@@ -26,7 +28,7 @@ function parseHashRoute(hash: string): string {
     raw === 'machines' ||
     raw === 'accounts' ||
     raw === 'activity' ||
-    raw === 'security' ||
+    raw === 'security' || raw === 'snapshots' || raw === 'notifications' ||
     raw === 'appearance' ||
     raw.startsWith('acct-')
   ) {
@@ -371,6 +373,10 @@ function WorkspaceShell() {
 
           <div className="nav">
             <div className="nav-title">管理</div>
+ <a href="#snapshots" className={route==='snapshots'?'on':''}>
+              <Icon name="snapshot" />
+              快照
+            </a>
             <a
               href="#accounts"
               className={route === 'accounts' ? 'on' : ''}
@@ -391,6 +397,10 @@ function WorkspaceShell() {
 
           <div className="nav">
             <div className="nav-title">面板设置</div>
+ <a href="#notifications" className={route==='notifications'?'on':''}>
+              <Icon name="bell" />
+              通知渠道
+            </a>
             <a
               href="#security"
               className={route === 'security' ? 'on' : ''}
@@ -416,7 +426,7 @@ function WorkspaceShell() {
             className={`page ${pageEnter ? 'enter' : ''}`}
             id="page"
           >
-            {route === 'accounts' ? (
+            {route === 'snapshots' ? <SnapshotsPage accounts={accounts}/> : route === 'notifications' ? <NotificationsPage/> : route === 'accounts' ? (
               <AccountsPage accounts={accounts} />
             ) : route === 'activity' ? (
               <ActivityPage accountMap={accountMap} machines={machines} />

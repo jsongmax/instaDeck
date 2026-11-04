@@ -9,7 +9,6 @@ import (
 	"instadeck/internal/instabox"
 	"instadeck/internal/operation"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,6 +16,17 @@ import (
 
 func (api *API) registerBusiness(router chi.Router) {
 	api.registerSecurity(router)
+	router.Get("/notification-channels", api.notificationChannels)
+	router.Post("/notification-channels", api.notificationChannels)
+	router.Patch("/notification-channels/{id}", api.notificationChannels)
+	router.Delete("/notification-channels/{id}", api.notificationChannels)
+	router.Post("/notification-channels/{id}/test", api.notificationChannels)
+	router.Get("/machines/{id}/ports", api.ports)
+	router.Post("/machines/{id}/ports", api.ports)
+	router.Delete("/machines/{id}/ports/{port}", api.ports)
+	router.Get("/snapshots", api.snapshots)
+	router.Post("/machines/{id}/snapshots", api.changeSnapshot)
+	router.Delete("/snapshots/{id}", api.changeSnapshot)
 	router.Get("/session", api.session)
 	router.Post("/auth/logout", api.logout)
 	router.Post("/auth/reauthenticate", api.reauthenticate)
@@ -29,6 +39,7 @@ func (api *API) registerBusiness(router chi.Router) {
 	router.Get("/machines/{id}", api.machine)
 	router.Get("/templates", api.templates)
 	router.Get("/audit-events", api.auditEvents)
+	router.Get("/audit-events/export", api.exportAuditEvents)
 	router.Get("/settings", api.settings)
 	router.Patch("/settings", api.changeSettings)
 	router.Get("/actions/{id}", api.action)
@@ -106,7 +117,7 @@ func (api *API) changeAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		_ = api.event(r, "credential.change", "failure", id, "")
+		_ = api.eventDetail(r, "credential.change", "failure", id, "", account.FilterError(err).Code)
 		api.accountFailure(w, r, err)
 		return
 	}
@@ -130,7 +141,7 @@ func (api *API) validateAccount(w http.ResponseWriter, r *http.Request) {
 	value, err := api.dependencies.Accounts.Validate(r.Context(), id)
 	api.dependencies.Fleet.Invalidate(id)
 	if err != nil {
-		_ = api.event(r, "credential.validate", "failure", id, "")
+		_ = api.eventDetail(r, "credential.validate", "failure", id, "", account.FilterError(err).Code)
 		api.accountFailure(w, r, err)
 		return
 	}
@@ -257,24 +268,6 @@ func (api *API) templates(w http.ResponseWriter, r *http.Request) {
 		values = append(values, templateDTO{ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, Default: template.Default, DefaultSpec: template.DefaultSpec})
 	}
 	writeJSON(w, 200, map[string]any{"templates": values})
-}
-
-func (api *API) auditEvents(w http.ResponseWriter, r *http.Request) {
-	after := int64(0)
-	if raw := r.URL.Query().Get("after"); raw != "" {
-		value, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || value < 0 {
-			fail(w, r, 400, "invalid_request")
-			return
-		}
-		after = value
-	}
-	values, err := api.dependencies.Audit.ReadAuditEvents(r.Context(), after, 100)
-	if err != nil {
-		fail(w, r, 503, "unavailable")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"events": values})
 }
 
 type actionDTO struct {

@@ -21,6 +21,15 @@ export class ApiError extends Error {
 }
 
 const ERROR_CODE_MAP: Record<string, string> = {
+ snapshot_scope_missing: '这个 Key 没有快照权限（images:read / write / delete）',
+ port_limit_reached: '这台机器的公开端口已达上限（16 个）',
+ private_ports_unavailable: '私有端口暂时不可用，请稍后重试或改用公开端口',
+ notify_unauthorized: '通知认证失败，请检查令牌或权限',
+ notify_rejected: '通知服务拒绝了这条消息',
+ notify_unreachable: '无法连接通知服务',
+ notify_address_blocked: '通知地址被内网拦截策略阻止',
+ not_found: '找不到此资源',
+
   https_required: '请通过 HTTPS 访问，或在服务器本机用 127.0.0.1 打开',
   origin_rejected: '访问地址校验失败，请使用面板的正确网址',
   already_initialized: '面板已完成设置，请登录',
@@ -60,7 +69,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
   terminal_rejected: '无法打开终端，请求被拒绝',
   terminal_unavailable: '终端服务暂不可用',
   invalid_connection: '终端连接无效',
-  address_blocked: 'SSH 地址被安全策略拦截。如果本机开着代理的 fake-IP 模式，请把 instabox.sh 设为直连，或在“登录与安全”里关闭“拦截内网 SSH 地址”',
+  address_blocked: 'SSH 地址被安全策略拦截。如果本机开着代理的 fake-IP 模式，请把 instabox.sh 设为直连，或在“登录与安全”里关闭“拦截内网地址”',
   machine_not_running: '机器未在运行中',
   pty_unsupported: '该机器不支持伪终端 (PTY)',
   terminal_limit: '终端连接数已达上限',
@@ -129,6 +138,10 @@ export function getMachineStateMeta(state: string): StateMeta {
 }
 
 const AUDIT_TYPE_MAP: Record<string, string> = {
+ 'port.publish': '发布或轮换端口', 'port.delete': '删除端口',
+ 'snapshot.create': '保存快照', 'snapshot.delete': '删除快照',
+ 'notification.change': '修改通知渠道', 'notification.test': '测试通知',
+
   login: '登录',
   'login.password': '密码验证',
   logout: '退出登录',
@@ -138,10 +151,16 @@ const AUDIT_TYPE_MAP: Record<string, string> = {
   'terminal.open': '打开终端',
   'terminal.close': '关闭终端',
   'operation.intent': '机器操作',
+  'operation.create': '创建机器',
+  'operation.start': '启动机器',
+  'operation.stop': '停止机器',
+  'operation.resume': '恢复运行',
+  'operation.suspend': '暂停机器',
+  'operation.delete': '删除机器',
   'operation.result': '机器操作结果',
   'setup.complete': '首次设置',
   'settings.change': '修改安全开关',
-  'settings.block_internal_ssh': '拦截内网 SSH 地址',
+  'settings.block_internal_ssh': '拦截内网地址',
   'settings.require_reauth': '敏感操作二次确认',
   'security.password': '修改密码',
   'security.start': '发起安全设置',

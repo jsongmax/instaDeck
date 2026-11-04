@@ -25,6 +25,7 @@ import (
 	"instadeck/internal/config"
 	"instadeck/internal/fleet"
 	"instadeck/internal/identity"
+	"instadeck/internal/notify"
 	"instadeck/internal/operation"
 	"instadeck/internal/store/sqlite"
 	"instadeck/internal/terminal"
@@ -46,6 +47,7 @@ type Dependencies struct {
 	Fleet              *fleet.Service
 	Operations         *operation.Service
 	Terminal           *terminal.Manager
+	Notify             *notify.Service
 	Audit              AuditStore
 	Assets             fs.FS
 	Logger             *slog.Logger
@@ -355,8 +357,13 @@ func clientIP(r *http.Request, private bool) string {
 }
 
 func (api *API) event(r *http.Request, kind, result, credentialID, machineID string) error {
+	return api.eventDetail(r, kind, result, credentialID, machineID, "")
+}
+func (api *API) eventDetail(r *http.Request, kind, result, credentialID, machineID, detail string) error {
 	requestID, _ := r.Context().Value(requestIDKey).(string)
-	return api.dependencies.Audit.WriteEvent(r.Context(), audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: api.clientIP(r)})
+	e := audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: api.clientIP(r)}
+	e.SetDetail(detail)
+	return api.dependencies.Audit.WriteEvent(r.Context(), e)
 }
 
 func (api *API) requireAudit(w http.ResponseWriter, r *http.Request, kind, credentialID, machineID string) bool {

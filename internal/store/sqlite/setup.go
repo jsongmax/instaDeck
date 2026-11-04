@@ -17,7 +17,7 @@ func (s *Store) HasAdministrator(ctx context.Context) (bool, error) {
 // HasProtectedData guards automatic creation of a missing master key.
 func (s *Store) HasProtectedData(ctx context.Context) (bool, error) {
 	var count int
-	err := s.reader.QueryRowContext(ctx, "SELECT (SELECT count(*) FROM administrator)+(SELECT count(*) FROM credentials WHERE status<>'deleted')").Scan(&count)
+	err := s.reader.QueryRowContext(ctx, "SELECT (SELECT count(*) FROM administrator)+(SELECT count(*) FROM credentials WHERE status<>'deleted')+(SELECT count(*) FROM notification_channels)").Scan(&count)
 	return count > 0, storageError(err)
 }
 

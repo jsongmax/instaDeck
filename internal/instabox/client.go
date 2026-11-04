@@ -19,6 +19,8 @@ import (
 // DefaultBaseURL is the production API origin.
 const DefaultBaseURL = "https://api.instabox.sh"
 
+const anySuccess = 0
+
 // Options overrides defaults for local testing. Production callers should pass Options{}.
 type Options struct {
 	BaseURL          string
@@ -106,6 +108,14 @@ func (client *Client) request(ctx context.Context, method, path string, query ur
 	if strings.ContainsAny(key+confirmation, "\r\n") {
 		return errors.New("instabox: invalid request headers")
 	}
+	return client.sendRequest(ctx, method, path, query, body, key, confirmation, status, poll, result)
+}
+
+// sendRequest also serves endpoints whose schema does not accept idempotency keys.
+func (client *Client) sendRequest(ctx context.Context, method, path string, query url.Values, body any, key, confirmation string, status int, poll bool, result any) error {
+	if strings.ContainsAny(key+confirmation, "\r\n") {
+		return errors.New("instabox: invalid request headers")
+	}
 	var payload []byte
 	var err error
 	if body != nil {
@@ -157,7 +167,7 @@ func (client *Client) request(ctx context.Context, method, path string, query ur
 	}
 	mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	isJSON := mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
-	if response.StatusCode != status {
+	if response.StatusCode != status && !(status == anySuccess && response.StatusCode >= 200 && response.StatusCode < 300) {
 		failure := &APIError{StatusCode: response.StatusCode, Kind: "http", NonJSON: !isJSON}
 		if isJSON {
 			var envelope ErrorBody
@@ -183,6 +193,9 @@ func (client *Client) request(ctx context.Context, method, path string, query ur
 			}
 		}
 		return failure
+	}
+	if result == nil {
+		return nil
 	}
 	if !isJSON {
 		return &APIError{StatusCode: response.StatusCode, NonJSON: true, Kind: "non_json"}

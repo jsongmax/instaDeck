@@ -12,6 +12,8 @@ import type { ActionKind, FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
 import { useAppStore } from '../store/useAppStore'
 import { DeleteMachineDialog } from './Dialogs'
+import { PortsPanel } from './PortsPanel'
+import { SaveSnapshot } from './SnapshotsPage'
 import { MachineStateBadge, Swatch } from './Icons'
 
 export function MachineDrawer({
@@ -137,6 +139,8 @@ export function MachineDrawer({
         </div>
 
         <div className="drawer-body">
+ <SaveSnapshot key={`snapshot:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
+ <PortsPanel key={`ports:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
           {machine.conflict ? (
             <div className="notice warn">账号之间状态不一致，请确认各账号同步状态。</div>
           ) : null}

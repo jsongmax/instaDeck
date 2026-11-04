@@ -66,6 +66,8 @@ type Audit interface {
 
 // Options bounds retries and independent long polling.
 type Options struct {
+	OnStarted                    func(Action)
+	OnFinished                   func(Action)
 	PollConcurrency, MaxAttempts int
 	BaseDelay                    time.Duration
 	Clock                        Clock

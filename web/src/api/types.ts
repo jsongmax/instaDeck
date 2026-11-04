@@ -156,8 +156,10 @@ export interface TerminalTicketResponse {
 }
 
 export interface AuditEventItem {
+  operationKind?: string
   Cursor: string
   Event: {
+    detail?: string
     Time: string
     Type: string
     SubjectID?: string
@@ -306,3 +308,7 @@ export const SKIN_META: SkinMeta[] = [
     termInk: '#2f281f',
   },
 ]
+
+export interface PublicPort { port: number; name: string; protocol: 'http'|'tcp'; access: 'public'|'private'; url: string; token?: string; tokenUrl?: string }
+export interface Snapshot { id: string; name: string; credentialId: string; accountName: string; sourceMachineId: string; status: string; error?: string; rootSizeBytes: number; dataSizeBytes: number; createdAt: string }
+export interface NotificationChannel { id: string; type: 'telegram'|'webhook'; name: string; enabled: boolean; events: string[]; hint: string }

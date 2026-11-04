@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 	"unicode"
@@ -30,4 +31,13 @@ func (e Event) Detail() string { return e.detail }
 
 type Writer interface {
 	WriteEvent(context.Context, Event) error
+}
+
+// MarshalJSON includes sanitized detail while keeping its setter as the only writer.
+func (e Event) MarshalJSON() ([]byte, error) {
+	type public Event
+	return json.Marshal(struct {
+		public
+		Detail string `json:"detail"`
+	}{public(e), e.Detail()})
 }

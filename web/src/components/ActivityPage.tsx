@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api/client'
-import { formatAuditEventType } from '../api/errors'
-import type { AuditEventItem, FleetMachine } from '../api/types'
+import { formatAuditEventType, formatActionError } from '../api/errors'
+import type { FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
 import { ErrorIcon, RunningCircleIcon, Swatch } from './Icons'
 
@@ -36,49 +36,27 @@ export function ActivityPage({
   accountMap: Map<string, EnrichedAccount>
   machines: FleetMachine[]
 }) {
-  const [extraItems, setExtraItems] = useState<AuditEventItem[]>([])
-  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
-  const [hasMoreOverride, setHasMoreOverride] = useState<boolean | null>(null)
-  const [loadingMore, setLoadingMore] = useState<boolean>(false)
-
-  const initialQuery = useQuery({
-    queryKey: ['auditEventsInitial'],
-    queryFn: () => api.getAuditEvents(undefined),
-  })
-
-  const firstPage = initialQuery.data?.events ?? []
-  const existingCursors = new Set(firstPage.map((x) => x.Cursor))
-  const combined = [
-    ...firstPage,
-    ...extraItems.filter((x) => !existingCursors.has(x.Cursor)),
-  ]
-  const activeCursor =
-    nextCursor ?? (combined.length > 0 ? combined[combined.length - 1].Cursor : undefined)
-  const hasMore = hasMoreOverride !== null ? hasMoreOverride : firstPage.length >= 100
-
-  const handleLoadMore = async () => {
-    if (!activeCursor || loadingMore) return
-    setLoadingMore(true)
-    try {
-      const res = await api.getAuditEvents(activeCursor)
-      const batch = res.events ?? []
-      setExtraItems((prev) => {
-        const seen = new Set(prev.map((x) => x.Cursor))
-        return [...prev, ...batch.filter((x) => !seen.has(x.Cursor))]
-      })
-      if (batch.length > 0) {
-        setNextCursor(batch[batch.length - 1].Cursor)
-      }
-      setHasMoreOverride(batch.length >= 100)
-    } catch {
-      // handled by api client
-    } finally {
-      setLoadingMore(false)
-    }
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [search, setSearch] = useState('')
+  const changeFilter = (key: string, value: string) => setFilters(prev => ({ ...prev, [key]: value }))
+  const activeFilters = {
+    ...filters,
+    ...(search ? {
+      machineIds: machines.filter(machine => machine.name.includes(search) || machine.id.includes(search))
+        .map(machine => machine.id).join(',') || '__no_matching_machine__',
+    } : {}),
   }
-
-  // Display newest first
-  const sortedItems = [...combined].reverse()
+  const initialQuery = useInfiniteQuery({
+    queryKey: ['auditEventsInitial', activeFilters],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api.getAuditEvents(pageParam, activeFilters),
+    getNextPageParam: page => page.events.length >= 100 ? page.events[page.events.length - 1].Cursor : undefined,
+  })
+  const combined = initialQuery.data?.pages.flatMap(page => page.events) ?? []
+  const sortedItems = [...new Map(combined.map(item => [item.Cursor, item])).values()]
+  const hasMore = initialQuery.hasNextPage
+  const loadingMore = initialQuery.isFetchingNextPage
+  const handleLoadMore = () => initialQuery.fetchNextPage()
   const machineNameMap = new Map<string, string>()
   machines.forEach((m) => machineNameMap.set(m.id, m.name))
 
@@ -87,6 +65,14 @@ export function ActivityPage({
       <div className="page-head">
         <h1>操作记录</h1>
       </div>
+      <div className="btn-row" style={{marginBottom: 12}}>
+        <select className="field" aria-label="筛选账号" value={filters.credentialId ?? ''} onChange={e=>changeFilter('credentialId',e.target.value)}><option value="">全部账号</option>{[...accountMap.values()].map(a=><option key={a.credentialId} value={a.credentialId}>{a.name}</option>)}</select>
+        <select className="field" aria-label="筛选结果" value={filters.result ?? ''} onChange={e=>changeFilter('result',e.target.value)}><option value="">全部结果</option>{['success','failure','unknown','intent'].map(v=><option key={v} value={v}>{AUDIT_RESULTS[v]}</option>)}</select>
+        <select className="field" aria-label="筛选类型" value={filters.type ?? ''} onChange={e=>changeFilter('type',e.target.value)}><option value="">全部类型</option>{[['operation.','机器操作'],['credential.','账号'],['port.','端口'],['snapshot.','快照'],['notification.','通知']].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select>
+        <input className="field" aria-label="搜索机器名" placeholder="搜索机器名" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <a className="btn" href={`/api/v1/audit-events/export?${new URLSearchParams({ ...activeFilters, order: 'desc' })}`} download>导出 CSV</a>
+      </div>
+      {initialQuery.error && <p className="errline">{initialQuery.error.message}</p>}
       <div className="table-wrap">
         <table>
           <thead>
@@ -112,9 +98,14 @@ export function ActivityPage({
                 const acct = ev.CredentialID
                   ? accountMap.get(ev.CredentialID)
                   : undefined
+                const operationType = item.operationKind
+                  ? formatAuditEventType(`operation.${item.operationKind}`)
+                  : formatAuditEventType(ev.Type)
                 const mName = ev.MachineID
                   ? machineNameMap.get(ev.MachineID) ?? ev.MachineID
-                  : '—'
+                  : item.operationKind
+                    ? operationType
+                    : '—'
                 const resStr = (ev.Result || 'ok').toLowerCase()
                 const isBad =
                   resStr.includes('fail') ||
@@ -159,6 +150,7 @@ export function ActivityPage({
                         )}
                         {resLabel}
                       </span>
+                      {(isBad || resStr === 'unknown') && ev.detail ? <div className="errline">{formatActionError(ev.detail)}</div> : null}
                     </td>
                   </tr>
                 )

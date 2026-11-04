@@ -9,6 +9,7 @@ import (
 	"instadeck/internal/fleet"
 	"instadeck/internal/httpapi"
 	"instadeck/internal/identity"
+	"instadeck/internal/notify"
 	"instadeck/internal/operation"
 	"instadeck/internal/store/sqlite"
 	"instadeck/internal/terminal"
@@ -93,7 +94,37 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	if err != nil {
 		return err
 	}
-	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{})
+	notifications := notify.New(store, ring, slog.Default())
+	notifications.ResolveAccount = func(id string) string {
+		values, _ := accounts.List(ctx)
+		for _, a := range values {
+			if a.CredentialID == id {
+				return a.Name
+			}
+		}
+		return id
+	}
+	notifications.Start(ctx)
+	defer notifications.Stop()
+	monitor := notify.NewMonitor(notifications, fleets)
+	monitor.Accounts = accounts
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	monitorDone := make(chan struct{})
+	defer func() { stopMonitor(); <-monitorDone }()
+	go func() { defer close(monitorDone); monitor.Run(monitorCtx) }()
+	accounts.OnInvalid = func(a account.DTO) {
+		notifications.Emit(notify.Message{Event: "credential.invalid", Title: "账号 Key 已失效", Message: "InstaBox 拒绝了这个 Key，请检查或替换。", Account: a.Name})
+	}
+	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{OnStarted: func(a operation.Action) { monitor.Begin(a.MachineID) }, OnFinished: func(a operation.Action) {
+		monitor.Operation(a.MachineID, time.Now())
+		if a.ErrorCode != "" || a.State == "unknown" {
+			machine := a.MachineID
+			if machine == "" {
+				machine = "（新建）"
+			}
+			notifications.Emit(notify.Message{Event: "operation.failed", Title: "机器操作失败：" + a.Kind, Message: "错误码：" + a.ErrorCode, Machine: machine, Account: a.CredentialID})
+		}
+	}})
 	if err != nil {
 		return err
 	}
@@ -102,7 +133,7 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 		return err
 	}
 	defer terminals.Shutdown()
-	api, err := httpapi.New(httpapi.Dependencies{Config: configuration, SetupStore: store, SetupOutput: os.Stderr, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Audit: store, Assets: web.Assets(), Logger: slog.Default(), AbsoluteSessionTTL: options.AbsoluteTTL})
+	api, err := httpapi.New(httpapi.Dependencies{Config: configuration, SetupStore: store, SetupOutput: os.Stderr, Identity: identities, Accounts: accounts, Fleet: fleets, Operations: actions, Terminal: terminals, Notify: notifications, Audit: store, Assets: web.Assets(), Logger: slog.Default(), AbsoluteSessionTTL: options.AbsoluteTTL})
 	if err != nil {
 		return err
 	}
