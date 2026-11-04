@@ -1,5 +1,6 @@
 services:
   instadeck:
+    image: ghcr.io/jsongmax/instadeck:${INSTADECK_TAG:-latest}
     build: .
     restart: unless-stopped
     volumes:

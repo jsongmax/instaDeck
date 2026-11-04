@@ -24,7 +24,8 @@ InstaDeck 是一个自托管的管理面板，用来在一个页面里统一管�
 - [x] HTTP 接口、管理命令和部署配置（部署配置尚未实际验证）
 - [x] 前端界面（机器、终端、账号、审计、安全设置、外观主题）
 - [x] 零配置启动和网页首次设置向导
-- [ ] 用真实 InstaBox 账号验证
+- [x] 用真实 InstaBox 账号本地验证
+- [ ] 部署到服务器并经 Cloudflare Tunnel 验证
 - [ ] 后续：通知渠道、端口转发、快照、文件管理、远程桌面、定时保活
 
 ## 技术栈
@@ -61,17 +62,26 @@ instadeck serve
 
 ## Docker 和 Cloudflare Tunnel 部署
 
-1. 在仓库根目录运行：
+镜像由 GitHub Actions 自动构建并发布到 `ghcr.io/jsongmax/instadeck`，支持 amd64 和 arm64，服务器上不需要编译。下面假设 cloudflared 已经装在宿主机上。
+
+1. 把仓库的 `docker-compose.yml` 放到服务器上，在同一目录运行：
 
    ```bash
-   docker compose up -d --build
+   docker compose pull
+   docker compose up -d
    ```
 
-   默认无需参数，自动生成主密钥，管理员由首次向导创建。若使用同一 Compose 的 Tunnel 容器，先在根目录 `.env` 写入 `CLOUDFLARE_TUNNEL_TOKEN=你的Tunnel令牌`，再运行 `docker compose --profile tunnel up -d --build`。也可以使用宿主机已有的 cloudflared。端口仅发布到宿主机回环，默认 8080；可选用 `INSTADECK_PORT` 覆盖。
+   不需要任何配置，主密钥会自动生成，管理员由首次向导创建。端口只发布到宿主机回环，默认 8080，可在 `.env` 里用 `INSTADECK_PORT` 修改。
 
-2. 在 Cloudflare Zero Trust 中给 Tunnel 配置 Public Hostname，例如 `panel.example.com`。同一 Compose 内服务地址为 `http://instadeck:8080`；宿主机 cloudflared 使用 `http://127.0.0.1:8080`（自定义端口时相应调整）。不要改写 HTTP Host Header。
+2. 在 Cloudflare Zero Trust 中给 Tunnel 配置 Public Hostname，例如 `panel.example.com`，服务地址填 `http://127.0.0.1:8080`。不要改写 HTTP Host Header。
 
-3. **用公网域名 `https://panel.example.com` 打开面板完成向导**。用 `docker compose logs instadeck` 查看首次设置码，每次重启都会换新码，以最后一条为准。容器中的私网代理连接始终需要设置码。向导会保存当前网址为面板 Origin；若在 `http://127.0.0.1:8080` 完成设置，之后公网域名会被拒绝。修复方式：
+3. **用公网域名 `https://panel.example.com` 打开面板完成向导**。首次设置码用下面的命令查看，每次重启都会换新码，以最后一条为准：
+
+   ```bash
+   docker compose logs instadeck
+   ```
+
+   向导会把当前网址保存为面板地址。如果在 `http://127.0.0.1:8080` 上完成设置，之后公网域名会被拒绝，修复方式：
 
    ```bash
    docker compose exec instadeck /usr/local/bin/instadeck admin set-origin https://新域名
@@ -80,7 +90,7 @@ instadeck serve
 
 4. Cloudflare 侧关闭 Rocket Loader（会被 CSP 拦截）；建议增加 Cloudflare Access 作为第二道门。免费和 Pro 计划单次请求上限为 100 MB；WebSocket 默认开启，面板会发送心跳维持空闲连接，终端仍受 30 分钟空闲超时约束。
 
-5. 备份数据卷中的 `panel.db` 和 `master.key`，两者分开保管。为保证 SQLite 备份一致性，可先停止面板，再分别复制：
+5. 备份数据卷中的 `panel.db` 和 `master.key`，两者分开保管。主密钥丢失后 API Key 无法解密。为保证数据库一致，可先停止面板再复制：
 
    ```bash
    docker compose stop instadeck
@@ -89,17 +99,20 @@ instadeck serve
    docker compose start instadeck
    ```
 
-   主密钥丢失后 API Key 无法解密。也可使用 `admin backup` 进行在线数据库备份，主密钥仍须单独备份。
-
 6. 升级：
 
    ```bash
-   git pull && docker compose up -d --build
+   docker compose pull
+   docker compose up -d
    ```
 
-   使用 Tunnel 容器时加上 `--profile tunnel`。
+   `latest` 跟随 `main` 分支。正式使用建议在 `.env` 里用 `INSTADECK_TAG` 固定版本标签，例如 `INSTADECK_TAG=1.0.0`。打 `v1.0.0` 这样的 Git 标签会发布对应版本的镜像。
 
-镜像以非 root 用户运行，数据库和主密钥仅写入 `/data` 命名卷。镜像内置 `INSTADECK_TRUSTED_PROXY=private`，仅信任回环和私网对端的 X-Forwarded-For 最右一跳；请保持容器网络可信，勿直接向公网发布面板端口。Docker 以外默认仍拒绝非回环监听，Caddy/systemd 是不用 Docker 时的可选方式。
+**从源码构建：** 在仓库根目录运行 `docker compose up -d --build`。
+
+**想让 cloudflared 也跑在 Compose 里：** 在 `.env` 里写 `CLOUDFLARE_TUNNEL_TOKEN=你的令牌`，启动时加 `--profile tunnel`，服务地址改成 `http://instadeck:8080`。
+
+镜像以非 root 用户运行，数据库和主密钥只写入 `/data` 命名卷。镜像内置 `INSTADECK_TRUSTED_PROXY=private`，只信任回环和私网对端的 X-Forwarded-For 最右一跳，请不要把面板端口直接发布到公网。不用 Docker 时默认只允许回环监听，Caddy 和 systemd 是可选方式。
 
 ## 开发
 

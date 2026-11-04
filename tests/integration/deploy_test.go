@@ -61,6 +61,15 @@ func TestDockerDeploymentFiles(t *testing.T) {
 		}
 	}
 	compose := read("docker-compose.yml")
+	workflow := read(filepath.Join(".github", "workflows", "docker.yml"))
+	for _, value := range []string{"needs: test", "go test -race", "linux/amd64,linux/arm64", "push: ${{ github.event_name != 'pull_request' }}", "packages: write"} {
+		if !strings.Contains(workflow, value) {
+			t.Errorf("workflow missing %s", value)
+		}
+	}
+	if !strings.Contains(read("docker-compose.yml"), "image: ghcr.io/jsongmax/instadeck:${INSTADECK_TAG:-latest}") {
+		t.Error("compose must use the published image")
+	}
 	for _, value := range []string{`"127.0.0.1:${INSTADECK_PORT:-8080}:8080"`, "instadeck-data:/data", "profiles: [tunnel]", "condition: service_healthy", "TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}"} {
 		if !strings.Contains(compose, value) {
 			t.Errorf("compose missing %s", value)
