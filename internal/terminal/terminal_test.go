@@ -231,6 +231,8 @@ func startSSH(t *testing.T, mode string) *sshFixture {
 						defer stream.Close()
 						var echo sync.WaitGroup
 						defer echo.Wait()
+						sessionEnded := make(chan struct{})
+						defer close(sessionEnded)
 						for request := range requests {
 							switch request.Type {
 							case "pty-req":
@@ -245,6 +247,17 @@ func startSSH(t *testing.T, mode string) *sshFixture {
 									continue
 								}
 								_ = request.Reply(true, nil)
+								// Exit as soon as the test asks, independent of further requests.
+								echo.Add(1)
+								go func() {
+									defer echo.Done()
+									select {
+									case code := <-fixture.finish:
+										_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: code}))
+										_ = stream.Close()
+									case <-sessionEnded:
+									}
+								}()
 								echo.Add(1)
 								go func() {
 									defer echo.Done()
@@ -262,13 +275,6 @@ func startSSH(t *testing.T, mode string) *sshFixture {
 								fixture.resize <- append([]byte(nil), request.Payload...)
 							default:
 								_ = request.Reply(false, nil)
-							}
-							select {
-							case code := <-fixture.finish:
-								_, _ = stream.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{Status: code}))
-								_ = stream.Close()
-								return
-							default:
 							}
 						}
 					}()
@@ -620,9 +626,10 @@ func TestExitAndTicketRevocation(t *testing.T) {
 	frames := newFrames()
 	done := runTerminal(t, manager, binding, frames)
 	ready(t, frames)
-	fixture.finish <- 7
+	// A shell that has already exited cannot receive the resize, so confirm it first.
 	frames.incoming <- outputFrame{payload: []byte(`{"type":"resize","cols":80,"rows":24}`)}
 	receive(t, fixture.resize)
+	fixture.finish <- 7
 	for {
 		frame := receive(t, frames.outgoing)
 		if frame.binary {
