@@ -1,0 +1,16 @@
+/bin/
+*.exe
+web/dist/*
+!web/dist/.gitkeep
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+*.key
+.env
+.env.*
+!.env.example
+.ccg/
+
+# Local AI instructions
+CLAUDE.md
