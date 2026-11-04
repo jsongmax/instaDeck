@@ -29,6 +29,8 @@ func (api *API) registerBusiness(router chi.Router) {
 	router.Get("/machines/{id}", api.machine)
 	router.Get("/templates", api.templates)
 	router.Get("/audit-events", api.auditEvents)
+	router.Get("/settings", api.settings)
+	router.Patch("/settings", api.changeSettings)
 	router.Get("/actions/{id}", api.action)
 	router.Post("/machines", api.submit)
 	router.Post("/machines/{id}/actions", api.submit)
@@ -53,7 +55,7 @@ type accountRequest struct {
 }
 
 func (api *API) changeAccount(w http.ResponseWriter, r *http.Request) {
-	if !api.recent(w, r) {
+	if !api.sensitive(w, r) {
 		return
 	}
 	id := chi.URLParam(r, "id")
@@ -104,8 +106,14 @@ func (api *API) changeAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		fail(w, r, 400, account.FilterError(err).Code)
+		_ = api.event(r, "credential.change", "failure", id, "")
+		api.accountFailure(w, r, err)
 		return
+	}
+	if id == "" {
+		_ = api.event(r, "credential.change", "success", result.CredentialID, "")
+	} else {
+		_ = api.event(r, "credential.change", "success", id, "")
 	}
 	if r.Method == "DELETE" {
 		writeJSON(w, 200, map[string]bool{"ok": true})
@@ -122,10 +130,19 @@ func (api *API) validateAccount(w http.ResponseWriter, r *http.Request) {
 	value, err := api.dependencies.Accounts.Validate(r.Context(), id)
 	api.dependencies.Fleet.Invalidate(id)
 	if err != nil {
-		fail(w, r, 400, account.FilterError(err).Code)
+		_ = api.event(r, "credential.validate", "failure", id, "")
+		api.accountFailure(w, r, err)
 		return
 	}
+	_ = api.event(r, "credential.validate", "success", id, "")
 	writeJSON(w, 200, value)
+}
+
+func (api *API) accountFailure(w http.ResponseWriter, r *http.Request, err error) {
+	failure := account.FilterError(err)
+	requestID, _ := r.Context().Value(requestIDKey).(string)
+	api.dependencies.Logger.Warn("account request failed", "code", failure.Code, "detail", failure.Diagnostic(), "requestId", requestID)
+	fail(w, r, 400, failure.Code)
 }
 
 type usageDTO struct {
@@ -232,11 +249,12 @@ func (api *API) templates(w http.ResponseWriter, r *http.Request) {
 		Version     string               `json:"version"`
 		Arch        string               `json:"arch"`
 		Creatable   bool                 `json:"creatable"`
+		Default     bool                 `json:"default"`
 		DefaultSpec instabox.MachineSpec `json:"defaultSpec"`
 	}
 	values := make([]templateDTO, 0, len(value.Templates))
 	for _, template := range value.Templates {
-		values = append(values, templateDTO{ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, DefaultSpec: template.DefaultSpec})
+		values = append(values, templateDTO{ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, Default: template.Default, DefaultSpec: template.DefaultSpec})
 	}
 	writeJSON(w, 200, map[string]any{"templates": values})
 }
@@ -322,7 +340,7 @@ func (api *API) submit(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	if input.Kind == "delete" && !api.recent(w, r) {
+	if input.Kind == "delete" && !api.sensitive(w, r) {
 		return
 	}
 	if input.Kind == "create" {
@@ -346,7 +364,7 @@ func (api *API) submit(w http.ResponseWriter, r *http.Request) {
 		input.Body, _ = json.Marshal(fields)
 	}
 	requestID, _ := r.Context().Value(requestIDKey).(string)
-	value, err := api.dependencies.Operations.Submit(r.Context(), operation.Intent{AdministratorID: currentSession(r).AdministratorID, RequestID: requestID, ClientRequestID: input.ClientRequestID, CredentialID: input.CredentialID, Kind: input.Kind, MachineID: machineID, ConfirmName: input.ConfirmName, Body: input.Body})
+	value, err := api.dependencies.Operations.Submit(r.Context(), operation.Intent{AdministratorID: currentSession(r).AdministratorID, RequestID: requestID, SourceAddress: api.clientIP(r), ClientRequestID: input.ClientRequestID, CredentialID: input.CredentialID, Kind: input.Kind, MachineID: machineID, ConfirmName: input.ConfirmName, Body: input.Body})
 	if err != nil {
 		code := "operation_rejected"
 		status := 400

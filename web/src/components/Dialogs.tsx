@@ -53,7 +53,6 @@ export function ModalDialog({
   return (
     <dialog
       ref={dlgRef}
-      open
       className={wide ? 'wide-dlg' : undefined}
       onCancel={(e) => {
         e.preventDefault()
@@ -385,7 +384,7 @@ function CreateMachineForm({
   const activeTemplateId =
     selectedTplId && creatableTemplates.some((t) => t.id === selectedTplId)
       ? selectedTplId
-      : creatableTemplates[0]?.id ?? 'default'
+      : (creatableTemplates.find((t) => t.default) ?? creatableTemplates[0])?.id ?? 'default'
 
   const handleTemplateChange = (id: string) => {
     setSelectedTplId(id)
@@ -420,6 +419,11 @@ function CreateMachineForm({
       setErrMsg('请输入机器名称')
       return
     }
+    const selected = accounts.find((a) => a.credentialId === credentialId)
+    if (selected?.isQuotaFull) {
+      setErrMsg(`这个账号额度已满（${selected.machineCount}/${selected.maxMachines}），已停止和已暂停的机器也算，请先删除一台`)
+      return
+    }
     setSubmitting(true)
     setErrMsg('')
     const clientRequestId = crypto.randomUUID()
@@ -435,6 +439,7 @@ function CreateMachineForm({
         },
       })
       upsertTrackedAction(action)
+      useAppStore.getState().addCreateRecord(action.id, trimmed, credentialId)
       showToast(`已提交创建 ${trimmed}`)
       await queryClient.invalidateQueries({ queryKey: ['fleet'] })
       onClose()

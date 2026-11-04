@@ -26,6 +26,29 @@ const ERROR_CODE_MAP: Record<string, string> = {
   already_initialized: '面板已完成设置，请登录',
   invalid_setup_code: '设置码错误，请查看服务器日志',
   invalid_request: '输入内容无效，请检查后重试',
+  template_not_allowed: '当前套餐不能使用这个模板。免费版只能用 agent-browser、android 或 ci',
+  spec_not_allowed: '当前套餐不支持这个规格',
+  template_limit: '这个模板的机器数量已达上限',
+  quota_exceeded: '已达到账号额度。免费版最多 1 台机器，已停止和已暂停的也算，请先删除一台',
+  retry_exhausted: '多次重试仍未成功，请稍后再试',
+  key_expired: '操作已超过有效期，请重新发起',
+  credential_changed: '账号 Key 已更换或失效，操作已停止',
+  tracking_unavailable: '无法获取操作进度，请刷新机器列表确认结果',
+  invalid_response: 'InstaBox 返回的数据异常',
+  request_changed: '操作内容校验失败，请重新发起',
+  credit_exhausted: '账号额度已用完',
+  spend_limit_reached: '已达到账号的消费上限',
+  subscription_required: '这个操作需要付费套餐',
+  payment_method_required: '这个操作需要先绑定付款方式',
+  upstream_rejected: 'InstaBox 拒绝了这个操作',
+  upstream_failed: 'InstaBox 执行这个操作失败',
+  unavailable: '暂时无法连接 InstaBox，请稍后重试',
+  forbidden: 'InstaBox 拒绝了这个 Key，请检查权限或账号状态',
+  missing_scope: '这个 Key 缺少所需权限',
+  invalid_identity: 'InstaBox 返回的账号信息不完整，无法识别这个 Key',
+  timeout: '连接 InstaBox 超时，请稍后重试',
+  invalid_name: '请填写别名',
+  pagination_limit: '机器列表过长，无法读取完整',
 
   confirmation_mismatch: '确认名称不匹配',
   capability_denied: '该账号 Key 没有此操作的权限',
@@ -37,6 +60,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
   terminal_rejected: '无法打开终端，请求被拒绝',
   terminal_unavailable: '终端服务暂不可用',
   invalid_connection: '终端连接无效',
+  address_blocked: 'SSH 地址被安全策略拦截。如果本机开着代理的 fake-IP 模式，请把 instabox.sh 设为直连，或在“登录与安全”里关闭“拦截内网 SSH 地址”',
   machine_not_running: '机器未在运行中',
   pty_unsupported: '该机器不支持伪终端 (PTY)',
   terminal_limit: '终端连接数已达上限',
@@ -63,6 +87,11 @@ const ERROR_CODE_MAP: Record<string, string> = {
 export function formatErrorCode(code: string | undefined | null): string {
   if (!code) return '请求失败，请稍后重试'
   return ERROR_CODE_MAP[code] ?? '请求失败，请稍后重试'
+}
+
+export function formatActionError(code: string | undefined | null): string {
+  if (code && !ERROR_CODE_MAP[code]) return `操作失败（${code}）`
+  return formatErrorCode(code)
 }
 
 export type StateIconType = 'running' | 'stopped' | 'suspended' | 'busy' | 'error'
@@ -109,6 +138,11 @@ const AUDIT_TYPE_MAP: Record<string, string> = {
   'terminal.open': '打开终端',
   'terminal.close': '关闭终端',
   'operation.intent': '机器操作',
+  'operation.result': '机器操作结果',
+  'setup.complete': '首次设置',
+  'settings.change': '修改安全开关',
+  'settings.block_internal_ssh': '拦截内网 SSH 地址',
+  'settings.require_reauth': '敏感操作二次确认',
   'security.password': '修改密码',
   'security.start': '发起安全设置',
   'security.totp': '更换验证器',

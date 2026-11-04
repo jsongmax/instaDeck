@@ -5,6 +5,7 @@ export type IconName =
   | 'play'
   | 'pause'
   | 'stop'
+  | 'trash'
   | 'term'
   | 'grid'
   | 'key'
@@ -29,6 +30,18 @@ export function Icon({ name }: { name: IconName }) {
       break
     case 'stop':
       content = <rect x="3.2" y="3.2" width="9.6" height="9.6" rx="2" fill="currentColor" />
+      break
+    case 'trash':
+      content = (
+        <path
+          d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M6.8 7v3.5M9.2 7v3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )
       break
     case 'term':
       content = (

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { useState } from 'react'
-import { api } from '../api/client'
+import { api, type PanelSettings } from '../api/client'
 import { ApiError, formatRelativeTime } from '../api/errors'
 import { useAppStore } from '../store/useAppStore'
 import { evaluatePasswordStrength } from '../api/passwordStrength'
@@ -27,6 +27,26 @@ export function SecurityPage() {
     queryKey: ['sessions'],
     queryFn: () => api.getSessions(),
   })
+
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+  })
+  const [settingBusy, setSettingBusy] = useState(false)
+
+  const changeSetting = async (change: Partial<PanelSettings>, label: string) => {
+    setSettingBusy(true)
+    try {
+      const value = await api.changeSettings(change)
+      queryClient.setQueryData(['settings'], value)
+      const enabled = Object.values(change)[0]
+      showToast(`已${enabled ? '开启' : '关闭'}${label}`)
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : '操作失败')
+    } finally {
+      setSettingBusy(false)
+    }
+  }
 
   const [curPw, setCurPw] = useState('')
   const [newPw1, setNewPw1] = useState('')
@@ -203,6 +223,45 @@ export function SecurityPage() {
       <div className="page-head">
         <h1>登录与安全</h1>
       </div>
+
+      <section className="card card-wide">
+        <h2>安全开关</h2>
+        <div className="setting-row">
+          <label className="switch" htmlFor="setting-reauth">
+            <input
+              id="setting-reauth"
+              type="checkbox"
+              checked={settingsQuery.data?.requireReauth ?? true}
+              disabled={!settingsQuery.data || settingBusy}
+              onChange={(e) =>
+                void changeSetting({ requireReauth: e.target.checked }, '敏感操作二次确认')
+              }
+            />
+            敏感操作二次确认
+          </label>
+          <p className="muted">
+            开启后，登录超过 5 分钟再添加、修改或移除账号，或删除机器时，要重新输入密码和两步验证码。关闭后这些操作不再询问：如果有人拿到了你已登录的浏览器，就能直接改动账号和删除机器。修改密码、更换验证器、生成恢复码和注销设备始终需要验证，不受此开关影响。
+          </p>
+        </div>
+        <div className="setting-row">
+          <label className="switch" htmlFor="setting-ssh">
+            <input
+              id="setting-ssh"
+              type="checkbox"
+              checked={settingsQuery.data?.blockInternalSsh ?? true}
+              disabled={!settingsQuery.data || settingBusy}
+              onChange={(e) =>
+                void changeSetting({ blockInternalSsh: e.target.checked }, '拦截内网 SSH 地址')
+              }
+            />
+            拦截内网 SSH 地址
+          </label>
+          <p className="muted">
+            打开终端时，面板会替你连接 InstaBox 返回的 SSH 地址。开启后，只连接公网地址，拒绝本机、内网和保留地址，防止错误或被篡改的地址让面板去访问你的内部服务。关闭后，任何地址都可能被连接。只有在本机代理使用 fake-IP（地址为 198.18.x.x）导致终端打不开时才建议关闭，并建议只在本地测试时使用；服务器部署请保持开启。SSH 服务器的身份校验不受此开关影响。
+          </p>
+        </div>
+        <p className="muted">关闭任一开关前，都需要重新验证身份。</p>
+      </section>
 
       <section className="card">
         <h2>修改密码</h2>

@@ -118,6 +118,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   throw new ApiError(res.status, code, message, retryable, requestId)
 }
 
+export interface PanelSettings {
+  blockInternalSsh: boolean
+  requireReauth: boolean
+}
+
 export interface SetupStatus { required: boolean; codeRequired: boolean }
 export interface SetupEnrollment { otpauthUri: string; secret: string }
 export interface SetupResult extends SessionInfo { recoveryCodes: string[] }
@@ -257,6 +262,11 @@ export const api = {
     ),
 
   getSecurity: () => apiRequest<SecurityInfo>('/security', { method: 'GET' }),
+
+  getSettings: () => apiRequest<PanelSettings>('/settings', { method: 'GET' }),
+
+  changeSettings: (body: Partial<PanelSettings>) =>
+    apiRequest<PanelSettings>('/settings', { method: 'PATCH', body }),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<SessionInfo>('/security/password', {

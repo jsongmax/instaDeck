@@ -274,3 +274,26 @@ func TestUntrustedErrorsAreFiltered(t *testing.T) {
 		t.Fatal("context identity lost")
 	}
 }
+
+func TestIdentityRequiresOrganizationOnly(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		valid      bool
+	}{
+		{"personal key without user ID", `{"login":"tester","org":{"id":"org_1","name":"p","tier":"free","kind":"personal"}}`, true},
+		{"workspace key", `{"orgId":"org_2"}`, true},
+		{"no organization", `{"userId":42,"login":"tester"}`, false},
+		{"empty", `{}`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service, _, _ := serviceFixture(t, func(writer http.ResponseWriter, request *http.Request) { respond(writer, 200, test.body) })
+			_, err := service.Add(context.Background(), account.Input{Name: "test account", Key: "private-key"})
+			if (err == nil) != test.valid {
+				t.Fatal(err)
+			}
+			if err != nil && account.FilterError(err).Code != "invalid_identity" {
+				t.Fatal(err)
+			}
+		})
+	}
+}

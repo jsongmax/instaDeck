@@ -217,7 +217,10 @@ func (frames *websocketFrames) Close() error {
 		if frames.stop != nil {
 			frames.stop()
 		}
-		frames.closeErr = frames.connection.CloseNow()
+		// An abrupt close with unread client frames resets the connection, and the
+		// browser then discards an error frame it has not delivered yet.
+		frames.closeErr = frames.connection.Close(websocket.StatusNormalClosure, "")
+		_ = frames.connection.CloseNow()
 		if frames.done != nil {
 			<-frames.done
 		}

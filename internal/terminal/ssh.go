@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,11 +57,37 @@ func (manager *Manager) hostCallback(trust instabox.HostTrust) (ssh.HostKeyCallb
 	}, nil
 }
 
+// note records why a connection failed. Upstream text is reduced to a status
+// and a sanitized code.
+func (manager *Manager) note(step string, err error) {
+	if manager.options.Logger == nil {
+		return
+	}
+	detail := "error"
+	var upstream *instabox.APIError
+	var network net.Error
+	if errors.As(err, &upstream) {
+		code := strings.Map(func(r rune) rune {
+			if r == '_' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				return r
+			}
+			return '?'
+		}, upstream.Code)
+		detail = fmt.Sprintf("status=%d code=%.64s", upstream.StatusCode, code)
+	} else if errors.Is(err, InvalidConnection) {
+		detail = "rejected"
+	} else if errors.As(err, &network) && network.Timeout() {
+		detail = "timeout"
+	}
+	manager.options.Logger.Warn("terminal connect failed", "step", step, "detail", detail)
+}
+
 func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, manager.options.DialTimeout)
 	defer cancel()
 	info, err := manager.upstream.GetConnectionInfo(ctx, binding)
 	if err != nil {
+		manager.note("connection_info", err)
 		return nil, Unavailable
 	}
 	if !slices.Contains(info.Capabilities, "pty") {
@@ -92,6 +120,7 @@ func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Clie
 				return nil, MachineNotRunning
 			}
 			if apiError.StatusCode != 0 {
+				manager.note("create_connection", err)
 				return nil, Unavailable
 			}
 		}
@@ -100,22 +129,27 @@ func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Clie
 		}
 	}
 	if err != nil {
+		manager.note("create_connection", err)
 		return nil, Unavailable
 	}
 	certificateKey, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(connection.Certificate))
 	if err != nil || len(bytes.TrimSpace(rest)) != 0 {
+		manager.note("parse_certificate", InvalidConnection)
 		return nil, InvalidConnection
 	}
 	certificate, ok := certificateKey.(*ssh.Certificate)
 	if !ok || certificate.CertType != ssh.UserCert || !bytes.Equal(certificate.Key.Marshal(), signer.PublicKey().Marshal()) || !slices.Contains(certificate.ValidPrincipals, binding.MachineID) {
+		manager.note("check_certificate", InvalidConnection)
 		return nil, InvalidConnection
 	}
 	checker := ssh.CertChecker{Clock: manager.options.Now}
 	if checker.CheckCert(binding.MachineID, certificate) != nil || connection.Transport != "ssh" || connection.MachineID != binding.MachineID || !manager.options.Now().Before(connection.ExpiresAt) || connection.Username == "" || connection.Host == "" || connection.Port < 1 || connection.Port > 65535 {
+		manager.note("check_connection", InvalidConnection)
 		return nil, InvalidConnection
 	}
 	callback, err := manager.hostCallback(connection.HostTrust)
 	if err != nil {
+		manager.note("host_trust", InvalidConnection)
 		return nil, InvalidConnection
 	}
 	certificateSigner, err := ssh.NewCertSigner(certificate, signer)
@@ -128,7 +162,7 @@ func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Clie
 			return InvalidConnection
 		}
 		parsed, err := netip.ParseAddr(host)
-		if err != nil || !safeAddress(parsed, manager.options.AllowLoopbackForTests) {
+		if err != nil || !manager.addressAllowed(parsed) {
 			return InvalidConnection
 		}
 		return nil
@@ -136,6 +170,11 @@ func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Clie
 	address := net.JoinHostPort(connection.Host, strconv.FormatInt(connection.Port, 10))
 	network, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
+		if errors.Is(err, InvalidConnection) {
+			manager.note("dial_address_blocked", err)
+			return nil, AddressBlocked
+		}
+		manager.note("dial", err)
 		return nil, Unavailable
 	}
 	stop := watchCancellation(ctx, func() { _ = network.Close() })
@@ -147,6 +186,7 @@ func (manager *Manager) connect(ctx context.Context, binding Binding) (*ssh.Clie
 		if clientConnection != nil {
 			_ = clientConnection.Close()
 		}
+		manager.note("ssh_handshake", err)
 		return nil, Unavailable
 	}
 	_ = network.SetDeadline(time.Time{})

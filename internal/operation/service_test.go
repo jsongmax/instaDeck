@@ -570,3 +570,64 @@ func waitForCompletion(t *testing.T, fixture *fixture) {
 	}
 	t.Fatal("action did not complete after cache invalidation")
 }
+
+type outcomeRecorder struct {
+	mutex  sync.Mutex
+	events []audit.Event
+}
+
+func (recorder *outcomeRecorder) WriteEvent(_ context.Context, event audit.Event) error {
+	recorder.mutex.Lock()
+	defer recorder.mutex.Unlock()
+	recorder.events = append(recorder.events, event)
+	return nil
+}
+
+// A rejected create has no machine row, so the audit outcome is its only record.
+func TestOutcomeIsAudited(t *testing.T) {
+	for _, test := range []struct {
+		name, result, detail string
+		rejection            error
+	}{
+		{name: "success", result: "success"},
+		{name: "rejected", result: "failure", detail: "template_not_allowed", rejection: &instabox.APIError{StatusCode: 403, Code: "template_not_allowed"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &outcomeRecorder{}
+			fixture := setup(t, operation.Options{Events: recorder})
+			if test.rejection != nil {
+				fixture.client.submit = func(context.Context, request) (instabox.Operation, error) {
+					return instabox.Operation{}, test.rejection
+				}
+			}
+			action := submit(t, fixture, intent("one"))
+			start(t, fixture)
+			waitForAction(t, fixture, action.ID, func(value operation.Action) bool { return value.State == "completed" })
+			fixture.service.Stop()
+			recorder.mutex.Lock()
+			defer recorder.mutex.Unlock()
+			if len(recorder.events) != 1 {
+				t.Fatalf("events: %d", len(recorder.events))
+			}
+			event := recorder.events[0]
+			if event.Type != "operation.result" || event.Result != test.result || event.Detail() != test.detail || event.ActionID != action.ID {
+				t.Fatalf("%+v", event)
+			}
+		})
+	}
+}
+
+func TestQuotaExceededIsNotRetried(t *testing.T) {
+	fixture := setup(t, operation.Options{MaxAttempts: 5})
+	fixture.clock.wait = func(context.Context) error { return nil }
+	fixture.client.submit = func(context.Context, request) (instabox.Operation, error) {
+		return instabox.Operation{}, &instabox.APIError{StatusCode: 429, Code: "quota_exceeded"}
+	}
+	action := submit(t, fixture, intent("one"))
+	start(t, fixture)
+	waitForAction(t, fixture, action.ID, func(value operation.Action) bool { return value.State == "completed" })
+	fixture.service.Stop()
+	if result := read(t, fixture, action.ID); result.ErrorCode != "quota_exceeded" || result.Attempts != 1 {
+		t.Fatalf("result: %+v", result)
+	}
+}

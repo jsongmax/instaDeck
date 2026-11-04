@@ -59,6 +59,8 @@ type API struct {
 	policy       atomic.Pointer[originPolicy]
 	setup        setupState
 	authMutex    sync.Mutex
+	// reauthOff is inverted so the zero value keeps the protection on.
+	reauthOff atomic.Bool
 }
 
 type contextKey int
@@ -301,6 +303,12 @@ func (api *API) recent(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+// sensitive applies the optional second confirmation. Credential changes such as
+// passwords and session revocation keep their own checks whatever this says.
+func (api *API) sensitive(w http.ResponseWriter, r *http.Request) bool {
+	return api.reauthOff.Load() || api.recent(w, r)
 }
 
 func (api *API) token(r *http.Request, name string) string {

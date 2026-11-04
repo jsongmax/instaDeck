@@ -115,6 +115,7 @@ func (manager *Manager) ServeUpgrade(ctx context.Context, ticket Ticket, session
 	defer setupTimer()
 	session, err := client.NewSession()
 	if err != nil {
+		manager.note("ssh_session", err)
 		_ = manager.sendControl(ctx, frames, controlFrame{Type: "error", Code: Unavailable})
 		return Unavailable
 	}
@@ -325,6 +326,7 @@ func (manager *Manager) startSession(ctx context.Context, frames FrameConn, sess
 		err = session.Shell()
 	}
 	if err != nil {
+		manager.note("ssh_shell", err)
 		_ = manager.sendControl(ctx, frames, controlFrame{Type: "error", Code: Unavailable})
 		return nil, Unavailable
 	}

@@ -197,6 +197,7 @@ func (service *Service) Submit(ctx context.Context, intent Intent) (Action, erro
 		}
 	}
 	event.SubjectID = intent.AdministratorID
+	event.SourceAddress = intent.SourceAddress
 	if intent.RequestID != "" {
 		event.RequestID = intent.RequestID
 	}
@@ -283,7 +284,27 @@ func (service *Service) Stop() {
 
 func (service *Service) save(ctx context.Context, action *Action) bool {
 	action.UpdatedAt = service.options.Clock.Now().UTC()
-	return service.repository.UpdateAction(ctx, *action) == nil
+	if service.repository.UpdateAction(ctx, *action) != nil {
+		return false
+	}
+	service.recordOutcome(ctx, *action)
+	return true
+}
+
+func (service *Service) recordOutcome(ctx context.Context, action Action) {
+	if service.options.Events == nil || action.State != "completed" && action.State != "unknown" {
+		return
+	}
+	result := "success"
+	if action.State == "unknown" {
+		result = "unknown"
+	} else if action.ErrorCode != "" {
+		result = "failure"
+	}
+	event := audit.Event{Time: action.UpdatedAt, Type: "operation.result", CredentialID: action.CredentialID, MachineID: action.MachineID, ActionID: action.ID, Result: result, RequestID: action.ClientRequestID}
+	event.SetDetail(action.ErrorCode)
+	// The action state is already durable, so a failed audit write must not undo it.
+	_ = service.options.Events.WriteEvent(ctx, event)
 }
 
 func (service *Service) unknown(ctx context.Context, action *Action, code string) {
@@ -375,9 +396,22 @@ func rejectionCode(err error) string {
 	return "upstream_rejected"
 }
 
+// Limits share status 429 with rate limiting, but retrying cannot help until the
+// user frees something up.
+func limitReached(code string) bool {
+	switch code {
+	case "quota_exceeded", "template_limit", "spend_limit_reached", "credit_exhausted":
+		return true
+	}
+	return false
+}
+
 func rejected(err error) bool {
 	var upstream *instabox.APIError
 	if errors.As(err, &upstream) {
+		if limitReached(upstream.Code) {
+			return true
+		}
 		return upstream.StatusCode >= 400 && upstream.StatusCode < 500 && upstream.StatusCode != 429 && !upstream.Retryable
 	}
 	failure := account.FilterError(err)

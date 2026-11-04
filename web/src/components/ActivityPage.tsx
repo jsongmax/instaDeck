@@ -4,7 +4,7 @@ import { api } from '../api/client'
 import { formatAuditEventType } from '../api/errors'
 import type { AuditEventItem, FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
-import { BusySpinnerIcon, ErrorIcon, RunningCircleIcon, Swatch } from './Icons'
+import { ErrorIcon, RunningCircleIcon, Swatch } from './Icons'
 
 const AUDIT_RESULTS: Record<string, string> = {
   ok: '成功',
@@ -13,7 +13,10 @@ const AUDIT_RESULTS: Record<string, string> = {
   intent: '已发起',
   challenge: '密码已通过',
   closed: '已关闭',
-  pending: '进行中',
+  pending: '已发起',
+  unknown: '结果未知',
+  enabled: '已开启',
+  disabled: '已关闭',
 }
 
 function formatEventTime(iso: string): string {
@@ -118,12 +121,11 @@ export function ActivityPage({
                   resStr.includes('err') ||
                   resStr.includes('denied') ||
                   resStr.includes('reject')
-                const isBusy =
-                  resStr.includes('pending') || resStr.includes('busy') || resStr === 'intent'
+                const isStarted = resStr === 'pending' || resStr === 'intent' || resStr === 'unknown'
                 const color = isBad
                   ? 'var(--bad)'
-                  : isBusy
-                    ? 'var(--busy)'
+                  : isStarted
+                    ? 'var(--muted)'
                     : 'var(--ok)'
                 const resLabel = AUDIT_RESULTS[resStr] ?? ev.Result
 
@@ -150,9 +152,7 @@ export function ActivityPage({
                         className="state"
                         style={{ '--c': color } as React.CSSProperties}
                       >
-                        {isBusy ? (
-                          <BusySpinnerIcon />
-                        ) : isBad ? (
+                        {isBad ? (
                           <ErrorIcon />
                         ) : (
                           <RunningCircleIcon />

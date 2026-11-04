@@ -520,6 +520,81 @@ describe('InstaDeck Frontend Verification Suite', () => {
     expect(screen.queryByText(/失败：/)).not.toBeInTheDocument()
   })
 
+  it('3b. 提交创建后立即显示进度记录，失败时保留原因直到手动关闭', async () => {
+    const user = userEvent.setup()
+    let currentAction: ActionRecord = {
+      id: 'act-create',
+      credentialId: 'cred-1',
+      machineId: '',
+      kind: 'create',
+      state: 'tracking',
+      phase: '正在准备磁盘',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    server.use(http.get('/api/v1/actions/:id', () => HttpResponse.json(currentAction)))
+
+    renderApp()
+    await screen.findByRole('button', { name: '启动：ci-worker' })
+    act(() => {
+      useAppStore.getState().upsertTrackedAction(currentAction)
+      useAppStore.getState().addCreateRecord(currentAction.id, 'new-box', 'cred-1')
+    })
+
+    expect(await screen.findByText('new-box')).toBeInTheDocument()
+    expect(await screen.findByText('正在准备磁盘')).toBeInTheDocument()
+
+    currentAction = { ...currentAction, state: 'completed', errorCode: 'quota_exceeded' }
+    await waitFor(
+      () => {
+        expect(screen.getByText(/创建失败：已达到账号额度/)).toBeInTheDocument()
+      },
+      { timeout: 3500 },
+    )
+    expect(screen.getByText('new-box')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '关闭' }))
+    expect(screen.queryByText('new-box')).not.toBeInTheDocument()
+  })
+
+  it('3c. 列表每行都有删除按钮，点击后打开需要输入机器名的确认弹窗', async () => {
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: '删除：ci-worker' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getAllByText(/ci-worker/).length).toBeGreaterThan(0)
+    expect(within(dialog).getByRole('button', { name: /删除/ })).toBeDisabled()
+  })
+
+  it('3d. 点击操作列空白处打开详情，点击操作按钮不打开', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post('/api/v1/machines/:id/actions', () =>
+        HttpResponse.json(
+          {
+            id: 'act-row',
+            credentialId: 'cred-1',
+            machineId: 'm-2',
+            kind: 'start',
+            state: 'tracking',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          { status: 202 },
+        ),
+      ),
+    )
+    renderApp()
+    const startBtn = await screen.findByRole('button', { name: '启动：ci-worker' })
+    const cell = startBtn.closest('td') as HTMLElement
+
+    await user.click(startBtn)
+    expect(screen.queryByRole('button', { name: '删除机器' })).not.toBeInTheDocument()
+
+    await user.click(cell)
+    expect(await screen.findByRole('button', { name: '删除机器' })).toBeInTheDocument()
+  })
+
   it('4. 401 不卸载工作台（保留已输入内容和终端，弹出登录层）', async () => {
     const user = userEvent.setup()
     renderApp()

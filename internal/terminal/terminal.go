@@ -7,7 +7,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
+	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"instadeck/internal/instabox"
@@ -28,6 +31,9 @@ const (
 	InvalidConnection Code = "invalid_connection"
 	// MachineNotRunning indicates that the machine cannot accept a connection.
 	MachineNotRunning Code = "machine_not_running"
+	// AddressBlocked indicates that the SSH host resolved to a refused address,
+	// usually a local proxy's fake-IP DNS rather than a hostile response.
+	AddressBlocked Code = "address_blocked"
 	// PTYUnsupported indicates that the machine lacks PTY support.
 	PTYUnsupported Code = "pty_unsupported"
 	// QuotaExceeded indicates that terminal capacity is exhausted.
@@ -92,7 +98,10 @@ type Options struct {
 	GlobalLimit           int
 	MaxTickets            int
 	AllowLoopbackForTests bool
-	Now                   func() time.Time
+	// Logger receives connection failure steps. It never receives keys,
+	// certificates or terminal content.
+	Logger *slog.Logger
+	Now    func() time.Time
 	// Wait waits for input capacity and must return when the context is canceled.
 	Wait func(context.Context, time.Duration) error
 }
@@ -117,6 +126,15 @@ type Manager struct {
 	closed      bool
 	stop        chan struct{}
 	janitorDone chan struct{}
+	// filterOff is inverted so the zero value keeps the protection on.
+	filterOff atomic.Bool
+}
+
+// SetAddressFilter turns the check on SSH target addresses on or off.
+func (manager *Manager) SetAddressFilter(enabled bool) { manager.filterOff.Store(!enabled) }
+
+func (manager *Manager) addressAllowed(address netip.Addr) bool {
+	return manager.filterOff.Load() || safeAddress(address, manager.options.AllowLoopbackForTests)
 }
 
 // String hides all runtime state.

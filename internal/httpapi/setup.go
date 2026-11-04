@@ -26,6 +26,8 @@ type SetupStore interface {
 	identity.SetupRepository
 	HasAdministrator(context.Context) (bool, error)
 	PanelOrigin(context.Context) (string, error)
+	BoolSetting(context.Context, string, bool) (bool, error)
+	SetBoolSetting(context.Context, string, bool) error
 }
 
 type originPolicy struct {
@@ -77,6 +79,9 @@ func (api *API) initializeSetup() error {
 			}
 			api.setOrigin(origin)
 		}
+	}
+	if err := api.loadSwitches(context.Background()); err != nil {
+		return err
 	}
 	initialized, err := api.dependencies.SetupStore.HasAdministrator(context.Background())
 	if err != nil || initialized {

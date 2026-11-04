@@ -51,7 +51,9 @@ type APIError struct {
 	OperationID       *string
 	NonJSON           bool
 	Kind              string
-	cause             error
+	// Field names the schema field that failed to decode, never its value.
+	Field string
+	cause error
 }
 
 // Error returns a safe description without server-controlled strings.
@@ -185,8 +187,13 @@ func (client *Client) request(ctx context.Context, method, path string, query ur
 	if !isJSON {
 		return &APIError{StatusCode: response.StatusCode, NonJSON: true, Kind: "non_json"}
 	}
-	if json.Unmarshal(raw, result) != nil {
-		return &APIError{StatusCode: response.StatusCode, Kind: "invalid_json"}
+	if err = json.Unmarshal(raw, result); err != nil {
+		failure := &APIError{StatusCode: response.StatusCode, Kind: "invalid_json"}
+		var mismatch *json.UnmarshalTypeError
+		if errors.As(err, &mismatch) {
+			failure.Field = mismatch.Field
+		}
+		return failure
 	}
 	return nil
 }

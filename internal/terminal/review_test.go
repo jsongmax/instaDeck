@@ -191,3 +191,20 @@ func TestStdinPipeErrorFrame(t *testing.T) {
 		t.Fatalf("unexpected error frame: %s", frame.payload)
 	}
 }
+
+func TestAddressFilterSwitch(t *testing.T) {
+	manager := &Manager{}
+	fakeIP := netip.MustParseAddr("198.18.0.216")
+	public := netip.MustParseAddr("1.1.1.1")
+	if manager.addressAllowed(fakeIP) || !manager.addressAllowed(public) {
+		t.Fatal("the filter must be on by default")
+	}
+	manager.SetAddressFilter(false)
+	if !manager.addressAllowed(fakeIP) {
+		t.Fatal("the switch did not turn the filter off")
+	}
+	manager.SetAddressFilter(true)
+	if manager.addressAllowed(fakeIP) {
+		t.Fatal("the switch did not turn the filter back on")
+	}
+}

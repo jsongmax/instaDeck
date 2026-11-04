@@ -120,3 +120,36 @@ func TestHeartbeatRealConnection(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 }
+
+// The browser sends a resize as soon as the socket opens, before the server reads
+// anything. The final error frame must still arrive after that unread frame.
+func TestLastFrameSurvivesUnreadClientData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		frames := &websocketFrames{connection: conn}
+		defer frames.Close()
+		time.Sleep(50 * time.Millisecond)
+		_ = frames.WriteFrame(r.Context(), false, []byte(`{"type":"error","code":"address_blocked"}`))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	if err = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"resize","cols":80,"rows":24}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, payload, err := conn.Read(ctx)
+	if err != nil || !strings.Contains(string(payload), "address_blocked") {
+		t.Fatal(string(payload), err)
+	}
+	if _, _, err = conn.Read(ctx); websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+		t.Fatal(err)
+	}
+}

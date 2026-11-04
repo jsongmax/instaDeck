@@ -18,6 +18,15 @@ export interface TerminalWindowItem {
   fresh: boolean
 }
 
+// A create has no machine row until it succeeds, so it gets a placeholder row.
+export interface CreateRecord {
+  id: string
+  name: string
+  credentialId: string
+  status: 'running' | 'failed'
+  message?: string
+}
+
 export interface FailedActionInfo {
   actionId: string
   kind: ActionKind
@@ -90,6 +99,7 @@ interface AppState {
   lastSyncAt: number | null
 
   trackedActions: Record<string, ActionRecord>
+  createRecords: Record<string, CreateRecord>
   failedActionsByMachine: Record<string, FailedActionInfo>
   unknownActionMachines: Record<string, boolean>
   rowFlashes: Record<string, 'ok' | 'bad'>
@@ -114,6 +124,9 @@ interface AppState {
   setLastSyncAt: (ts: number) => void
 
   upsertTrackedAction: (action: ActionRecord) => void
+  addCreateRecord: (actionId: string, name: string, credentialId: string) => void
+  failCreateRecord: (actionId: string, message: string) => void
+  removeCreateRecord: (actionId: string) => void
   removeTrackedAction: (actionId: string) => void
   setMachineFailedAction: (machineId: string, info: FailedActionInfo | null) => void
   setMachineUnknownAction: (machineId: string, unknown: boolean) => void
@@ -154,6 +167,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   lastSyncAt: null,
 
   trackedActions: {},
+  createRecords: {},
   failedActionsByMachine: {},
   unknownActionMachines: {},
   rowFlashes: {},
@@ -244,6 +258,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setLastSyncAt: (ts) => set({ lastSyncAt: ts }),
+
+  addCreateRecord: (actionId, name, credentialId) =>
+    set((s) => ({
+      createRecords: {
+        ...s.createRecords,
+        [actionId]: { id: actionId, name, credentialId, status: 'running' },
+      },
+    })),
+
+  failCreateRecord: (actionId, message) =>
+    set((s) => {
+      const record = s.createRecords[actionId]
+      if (!record) return {}
+      return {
+        createRecords: { ...s.createRecords, [actionId]: { ...record, status: 'failed', message } },
+      }
+    }),
+
+  removeCreateRecord: (actionId) =>
+    set((s) => {
+      const next = { ...s.createRecords }
+      delete next[actionId]
+      return { createRecords: next }
+    }),
 
   upsertTrackedAction: (action) =>
     set((s) => ({

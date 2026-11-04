@@ -37,6 +37,36 @@ func (s *Store) SetPanelOrigin(ctx context.Context, origin string) error {
 	return storageError(err)
 }
 
+// BoolSetting reads a boolean setting. A missing or malformed value yields the
+// fallback, so a damaged row cannot silently disable a protection.
+func (s *Store) BoolSetting(ctx context.Context, key string, fallback bool) (bool, error) {
+	var value string
+	err := s.reader.QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return fallback, nil
+	}
+	if err != nil {
+		return fallback, storageError(err)
+	}
+	switch value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return fallback, nil
+}
+
+// SetBoolSetting replaces a boolean setting.
+func (s *Store) SetBoolSetting(ctx context.Context, key string, value bool) error {
+	text := "false"
+	if value {
+		text = "true"
+	}
+	_, err := s.writer.ExecContext(ctx, "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, text)
+	return storageError(err)
+}
+
 // CompleteSetup commits the sole administrator, recovery hashes, origin, audit and session together.
 func (s *Store) CompleteSetup(ctx context.Context, administrator identity.Administrator, origin string, session identity.Session) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {

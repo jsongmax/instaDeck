@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"instadeck/internal/instabox"
 	"instadeck/internal/keyring"
 	"strings"
@@ -53,8 +54,10 @@ func (service *Service) validateKey(ctx context.Context, key string) (instabox.M
 	if identity.OrgID == "" {
 		identity.OrgID = identity.Org.ID
 	}
-	if identity.UserID <= 0 || identity.OrgID == "" {
-		return instabox.Me{}, &Failure{Code: "invalid_identity"}
+	// Real API-key responses can omit userId although the spec requires it. The
+	// organization is what binds a key to its machines, and userId is display only.
+	if identity.OrgID == "" {
+		return instabox.Me{}, &Failure{Code: "invalid_identity", diagnostic: fmt.Sprintf("hasUser=%t hasOrg=false", identity.UserID > 0)}
 	}
 	return identity, nil
 }

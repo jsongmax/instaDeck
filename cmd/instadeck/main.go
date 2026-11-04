@@ -93,11 +93,11 @@ func run(ctx context.Context, arguments []string, input io.Reader, output io.Wri
 	if err != nil {
 		return err
 	}
-	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{})
+	actions, err := operation.New(store, accounts, fleets, fleets, operation.Options{Events: store})
 	if err != nil {
 		return err
 	}
-	terminals, err := terminal.New(httpapi.TerminalUpstream{Accounts: accounts}, terminal.Options{PerSessionLimit: 8, GlobalLimit: 8})
+	terminals, err := terminal.New(httpapi.TerminalUpstream{Accounts: accounts}, terminal.Options{PerSessionLimit: 8, GlobalLimit: 8, Logger: slog.Default()})
 	if err != nil {
 		return err
 	}

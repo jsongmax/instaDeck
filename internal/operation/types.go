@@ -24,6 +24,7 @@ type Action struct {
 type Intent struct {
 	RequestID                                                   string `json:"-"`
 	AdministratorID                                             string `json:"-"`
+	SourceAddress                                               string `json:"-"`
 	ClientRequestID, CredentialID, Kind, MachineID, ConfirmName string
 	Body                                                        []byte
 }
@@ -68,6 +69,8 @@ type Options struct {
 	BaseDelay                    time.Duration
 	Clock                        Clock
 	Audit                        Audit
+	// Events receives the outcome of each action, which the intent cannot record.
+	Events audit.Writer
 }
 
 // Failure contains only a fixed public code.

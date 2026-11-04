@@ -121,6 +121,7 @@ export interface MachineTemplate {
   version: string
   arch: string
   creatable: boolean
+  default?: boolean
   defaultSpec: {
     vcpus?: number
     memMiB?: number

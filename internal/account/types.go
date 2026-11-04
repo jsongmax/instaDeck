@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"instadeck/internal/instabox"
 	"instadeck/internal/keyring"
+	"strings"
 	"time"
 )
 
@@ -148,7 +149,24 @@ type Failure struct {
 	Code              string `json:"code"`
 	Retryable         bool   `json:"retryable"`
 	RetryAfterSeconds int64  `json:"retryAfterSeconds,omitempty"`
+	diagnostic        string
 	cause             error
+}
+
+// Diagnostic returns fixed-format detail for server logs. It holds no secrets
+// and no upstream text beyond a sanitized error code.
+func (failure Failure) Diagnostic() string { return failure.diagnostic }
+
+func safeToken(value string) string {
+	if len(value) > 64 {
+		value = value[:64]
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '_' || r == '-' || r == '.' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return r
+		}
+		return '?'
+	}, value)
 }
 
 // Error omits upstream text.
@@ -177,6 +195,7 @@ func FilterError(err error) *Failure {
 	var upstream *instabox.APIError
 	if errors.As(err, &upstream) {
 		result.Retryable = upstream.Retryable
+		result.diagnostic = fmt.Sprintf("status=%d kind=%s code=%s field=%s", upstream.StatusCode, safeToken(upstream.Kind), safeToken(upstream.Code), safeToken(upstream.Field))
 		switch {
 		case upstream.StatusCode == 401:
 			result.Code = "unauthorized"

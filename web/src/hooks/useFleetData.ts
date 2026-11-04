@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
-import { getAccountColor, getMachineStateMeta } from '../api/errors'
+import { formatActionError, getAccountColor, getMachineStateMeta } from '../api/errors'
 import type { Account, ActionKind, FleetAccount, FleetMachine, FleetResponse } from '../api/types'
 import { useAppStore } from '../store/useAppStore'
 
@@ -24,7 +24,8 @@ export function computeAccountQuota(
   const visibleMachines = machines.filter(
     (m) => m.state !== 'deleted' && m.sources.some((s) => s.credentialId === account.credentialId),
   )
-  const used = fleetInfo?.usage?.machines ?? visibleMachines.length
+  // Usage is measured about hourly, so it can lag behind the live machine list.
+  const used = Math.max(fleetInfo?.usage?.machines ?? 0, visibleMachines.length)
   const limits = fleetInfo?.usage?.limits
   const unlimitedList = limits?.unlimited ?? []
   const isUnlimitedMachines =
@@ -132,11 +133,20 @@ export function useFleetData() {
               errorCode: updated.errorCode || 'operation_rejected',
             })
             triggerRowFlash(machineId, 'bad')
+          } else {
+            // A failed create has no machine row to show the failure on.
+            const message = formatActionError(updated.errorCode)
+            useAppStore.getState().failCreateRecord(updated.id, message)
+            useAppStore.getState().showToast(`创建机器失败：${message}`)
           }
         } else if (updated.state === 'unknown') {
           if (machineId) {
             setMachineFailedAction(machineId, null)
             setMachineUnknownAction(machineId, true)
+          } else {
+            const message = '结果未知，请稍后刷新机器列表确认'
+            useAppStore.getState().failCreateRecord(updated.id, message)
+            useAppStore.getState().showToast(`创建机器${message}`)
           }
         } else {
           if (machineId) {
@@ -147,6 +157,10 @@ export function useFleetData() {
         }
 
         await queryClient.invalidateQueries({ queryKey: ['fleet'] })
+        // The new machine now has its own row, so the placeholder can go.
+        if (useAppStore.getState().createRecords[actionId]?.status === 'running') {
+          useAppStore.getState().removeCreateRecord(actionId)
+        }
       } catch {
         // transient network error while polling action; will retry next tick
       } finally {

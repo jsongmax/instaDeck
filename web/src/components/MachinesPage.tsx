@@ -11,7 +11,7 @@ import {
 import type { Account, ActionKind, FleetAccount, FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
 import { useAppStore } from '../store/useAppStore'
-import { AccountKeyDialog, CreateMachineDialog } from './Dialogs'
+import { AccountKeyDialog, CreateMachineDialog, DeleteMachineDialog } from './Dialogs'
 import { ErrorIcon, Icon, MachineStateBadge, Swatch } from './Icons'
 
 function CountUpNumber({ value }: { value: number }) {
@@ -68,6 +68,8 @@ export function MachinesPage({
   const selectedMachineId = useAppStore((s) => s.selectedMachineId)
   const setSelectedMachineId = useAppStore((s) => s.setSelectedMachineId)
   const trackedActions = useAppStore((s) => s.trackedActions)
+  const createRecords = useAppStore((s) => s.createRecords)
+  const removeCreateRecord = useAppStore((s) => s.removeCreateRecord)
   const failedActionsByMachine = useAppStore((s) => s.failedActionsByMachine)
   const unknownActionMachines = useAppStore((s) => s.unknownActionMachines)
   const rowFlashes = useAppStore((s) => s.rowFlashes)
@@ -80,6 +82,11 @@ export function MachinesPage({
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string
+    name: string
+    credentialId: string
+  } | null>(null)
   const [replaceKeyAccount, setReplaceKeyAccount] = useState<Account | null>(null)
 
   const currentAccount = filterAccountId ? accountMap.get(filterAccountId) : undefined
@@ -181,7 +188,11 @@ export function MachinesPage({
   const runningCount = scopedMachines.filter((m) => m.state === 'running').length
   const suspendedCount = scopedMachines.filter((m) => m.state === 'suspended').length
   const stoppedCount = scopedMachines.filter((m) => m.state === 'stopped').length
-  const busyCount = scopedMachines.filter((m) => isMachineBusy(m)).length
+  const scopedCreates = Object.values(createRecords).filter(
+    (r) => !filterAccountId || r.credentialId === filterAccountId,
+  )
+  const runningCreates = scopedCreates.filter((r) => r.status === 'running').length
+  const busyCount = scopedMachines.filter((m) => isMachineBusy(m)).length + runningCreates
 
   const statTiles = [
     { id: 'running', label: '运行中', count: runningCount, color: 'var(--ok)' },
@@ -351,6 +362,47 @@ export function MachinesPage({
             </tr>
           </thead>
           <tbody>
+            {scopedCreates.map((record) => {
+              const acct = accountMap.get(record.credentialId)
+              return (
+                <tr key={record.id} className={record.status === 'running' ? 'row-busy' : ''}>
+                  <td>
+                    <span className="mname">{record.name}</span>
+                  </td>
+                  <td>
+                    <span className="chip">
+                      <Swatch color={acct?.color ?? 'var(--muted)'} />
+                      {acct?.name ?? record.credentialId}
+                    </span>
+                  </td>
+                  <td colSpan={record.status === 'running' ? 1 : 2}>
+                    {record.status === 'running' ? (
+                      <MachineStateBadge
+                        state="creating"
+                        phase={trackedActions[record.id]?.phase}
+                        forceBusy
+                      />
+                    ) : (
+                      <div className="errline">创建失败：{record.message}</div>
+                    )}
+                  </td>
+                  {record.status === 'running' ? <td className="muted">刚刚提交</td> : null}
+                  <td>
+                    <div className="row-actions">
+                      {record.status === 'failed' ? (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => removeCreateRecord(record.id)}
+                        >
+                          关闭
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
             {filteredMachines.length > 0 ? (
               filteredMachines.map((m, index) => {
                 const prefSource = selectPreferredSource(m)
@@ -367,6 +419,12 @@ export function MachinesPage({
                   Boolean(acct.fleetInfo?.error) ||
                   !acct.enabled
                 const disabled = locked || busy
+                const canDelete = Boolean(
+                  acct &&
+                    (acct.capabilities.delete === 'declared' ||
+                      acct.capabilities.delete === 'verified') &&
+                    m.sources.find((s) => s.credentialId === primaryCredId)?.canDelete !== false,
+                )
                 const tip = (label: string) =>
                   locked ? 'Key 已失效或已暂停，无法操作' : label
                 const extraSources = Math.max(0, m.sources.length - 1)
@@ -383,9 +441,12 @@ export function MachinesPage({
                     } ${busy ? 'row-busy' : ''} ${flash ? `flash-${flash}` : ''}`}
                     style={{ '--i': index } as React.CSSProperties}
                     tabIndex={0}
-                    onClick={() =>
+                    onClick={(e) => {
+                      // Only the buttons themselves are excluded, so the blank part
+                      // of the wide actions column still opens the details.
+                      if ((e.target as HTMLElement).closest('button')) return
                       setSelectedMachineId(selectedMachineId === m.id ? null : m.id)
-                    }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && e.target === e.currentTarget) {
                         setSelectedMachineId(selectedMachineId === m.id ? null : m.id)
@@ -453,7 +514,7 @@ export function MachinesPage({
                         relTime
                       )}
                     </td>
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td>
                       <div className="row-actions">
                         {busy ? (
                           <span className="muted" style={{ fontSize: '12px' }}>
@@ -516,12 +577,28 @@ export function MachinesPage({
                             <Icon name="play" />
                           </button>
                         ) : null}
+                        {busy ? null : (
+                          <button
+                            type="button"
+                            className="btn icon-only danger"
+                            disabled={locked || !canDelete}
+                            aria-label={`删除：${m.name}`}
+                            data-tip={
+                              locked ? tip('删除') : canDelete ? '删除' : '这个账号的 Key 没有删除权限'
+                            }
+                            onClick={() =>
+                              setDeleteTarget({ id: m.id, name: m.name, credentialId: primaryCredId })
+                            }
+                          >
+                            <Icon name="trash" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                 )
               })
-            ) : allScopedAccountsFailed ? (
+            ) : scopedCreates.length > 0 ? null : allScopedAccountsFailed ? (
               <tr>
                 <td colSpan={5} style={{ color: 'var(--bad)' }}>
                   全部账号获取失败，无法加载机器列表，请根据上方错误提示检查或替换 API Key。
@@ -549,6 +626,17 @@ export function MachinesPage({
           </tbody>
         </table>
       </div>
+
+      <DeleteMachineDialog
+        open={deleteTarget !== null}
+        machineId={deleteTarget?.id ?? ''}
+        machineName={deleteTarget?.name ?? ''}
+        account={deleteTarget ? accountMap.get(deleteTarget.credentialId) : undefined}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={() => {
+          if (selectedMachineId === deleteTarget?.id) setSelectedMachineId(null)
+        }}
+      />
 
       <CreateMachineDialog
         open={createOpen}

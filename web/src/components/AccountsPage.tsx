@@ -145,7 +145,7 @@ export function AccountsPage({ accounts }: { accounts: EnrichedAccount[] }) {
                           style={{ '--c': 'var(--ok)' } as React.CSSProperties}
                         >
                           <RunningCircleIcon />
-                          同步中
+                          正常
                         </span>
                       ) : (
                         <span
