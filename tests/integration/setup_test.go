@@ -331,3 +331,147 @@ func TestSetupFlowPersistenceReplayAndConcurrency(t *testing.T) {
 		t.Fatalf("logout after restart: %d %s", logout.Code, logout.Body)
 	}
 }
+
+func TestPrivateProxySetupAndHealth(t *testing.T) {
+	fixture := newFixture(t, false, true)
+	fixture.dependencies.Config.TrustedProxy = "private"
+	var err error
+	fixture.api, err = httpapi.New(fixture.dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"status", "start"} {
+		method, body := "GET", ""
+		if path == "start" {
+			method = "POST"
+			body = `{"username":"admin","password":"integration-password-123"}`
+		}
+		request := httptest.NewRequest(method, "/api/v1/setup/"+path, strings.NewReader(body))
+		request.RemoteAddr = "10.0.0.2:1234"
+		request.Host = "127.0.0.1:8080"
+		request.Header.Set("Origin", "http://127.0.0.1:8080")
+		response := httptest.NewRecorder()
+		fixture.api.ServeHTTP(response, request)
+		if path == "status" && !strings.Contains(response.Body.String(), `"codeRequired":true`) {
+			t.Fatal(response.Body)
+		}
+		if path == "start" && (response.Code != 403 || !strings.Contains(response.Body.String(), "invalid_setup_code")) {
+			t.Fatal(response.Code, response.Body)
+		}
+	}
+	for _, origin := range []string{"", "https://panel.example.com"} {
+		fixture.dependencies.Config.Origin = origin
+		fixture.api, err = httpapi.New(fixture.dependencies)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest("GET", "/api/v1/healthz", nil)
+		request.Host = "127.0.0.1:8080"
+		response := httptest.NewRecorder()
+		fixture.api.ServeHTTP(response, request)
+		if response.Code != 200 || response.Body.String() != "{\"status\":\"ok\"}\n" {
+			t.Fatal(response.Code, response.Body)
+		}
+	}
+}
+
+func TestPrivateProxySetupRateLimitsIndependentVisitors(t *testing.T) {
+	fixture := newFixture(t, false, true)
+	fixture.dependencies.Config.TrustedProxy = "private"
+	var err error
+	fixture.api, err = httpapi.New(fixture.dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 7; i++ {
+		request := httptest.NewRequest("POST", "/api/v1/setup/start", strings.NewReader(`{"setupCode":"wrong"}`))
+		request.RemoteAddr = "172.18.0.3:1234"
+		request.Host = "127.0.0.1:8080"
+		request.Header.Set("Origin", "http://127.0.0.1:8080")
+		ip := "203.0.113.1"
+		want := 403
+		if i == 5 {
+			want = 429
+		}
+		if i == 6 {
+			ip = "203.0.113.2"
+		}
+		request.Header.Set("X-Forwarded-For", "8.8.8.8, "+ip)
+		response := httptest.NewRecorder()
+		fixture.api.ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatal(i, response.Code, response.Body)
+		}
+	}
+}
+
+// The whole path as seen behind cloudflared: a private peer, the public host and
+// HTTPS origin, and the visitor's address in the rightmost forwarded hop.
+func TestSetupThroughPrivateTunnel(t *testing.T) {
+	fixture := newFixture(t, false, true)
+	fixture.dependencies.Config.Origin = ""
+	fixture.dependencies.Config.TrustedProxy = "private"
+	var startup bytes.Buffer
+	fixture.dependencies.SetupOutput = &startup
+	var err error
+	fixture.api, err = httpapi.New(fixture.dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const origin, host, visitor = "https://panel.example.com", "panel.example.com", "203.0.113.9"
+	send := func(path string, body map[string]string, cookies []*http.Cookie) *httptest.ResponseRecorder {
+		encoded, _ := json.Marshal(body)
+		request := httptest.NewRequest("POST", "/api/v1/setup/"+path, bytes.NewReader(encoded))
+		request.RemoteAddr = "172.18.0.3:40000"
+		request.Host = host
+		request.Header.Set("Origin", origin)
+		request.Header.Set("X-Forwarded-For", "8.8.8.8, "+visitor)
+		for _, cookie := range cookies {
+			request.AddCookie(cookie)
+		}
+		response := httptest.NewRecorder()
+		fixture.api.ServeHTTP(response, request)
+		return response
+	}
+	account := map[string]string{"username": "admin", "password": testPassword}
+	if response := send("start", account, nil); response.Code != 403 {
+		t.Fatalf("start without code: %d %s", response.Code, response.Body)
+	}
+	account["setupCode"] = strings.Split(strings.Split(startup.String(), "：")[1], "（")[0]
+	started := send("start", account, nil)
+	if started.Code != 200 {
+		t.Fatalf("start: %d %s", started.Code, started.Body)
+	}
+	var enrollment struct {
+		Secret string `json:"secret"`
+	}
+	if err = json.Unmarshal(started.Body.Bytes(), &enrollment); err != nil {
+		t.Fatal(err)
+	}
+	completed := send("complete", map[string]string{"code": setupTOTP(t, enrollment.Secret, fixture.clock.Load()/30)}, started.Result().Cookies())
+	if completed.Code != 200 {
+		t.Fatalf("complete: %d %s", completed.Code, completed.Body)
+	}
+	var session *http.Cookie
+	for _, cookie := range completed.Result().Cookies() {
+		if cookie.Name == "__Host-instadeck_session" {
+			session = cookie
+		}
+	}
+	if session == nil || !session.Secure || !session.HttpOnly {
+		t.Fatal("session cookie must be __Host- and Secure behind HTTPS")
+	}
+	stored, err := fixture.store.PanelOrigin(context.Background())
+	if err != nil || stored != origin {
+		t.Fatalf("stored origin %q: %v", stored, err)
+	}
+	database, err := sql.Open("sqlite", filepath.Join(fixture.directory, "panel.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var address string
+	if err = database.QueryRow("SELECT source_address FROM sessions").Scan(&address); err != nil || address != visitor {
+		t.Fatalf("session source %q: %v", address, err)
+	}
+}

@@ -76,7 +76,7 @@ func (api *API) changeSecurity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), password, newPassword, ClientIP(r), mode)
+	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), password, newPassword, api.clientIP(r), mode)
 	if err != nil {
 		_ = api.event(r, "security."+mode, "failure", "", "")
 		securityFailure(w, r, err)

@@ -30,15 +30,15 @@ InstaDeck 是一个自托管的管理面板，用来在一个页面里统一管�
 ## 技术栈
 
 - **后端：** Go、chi、SQLite（`modernc.org/sqlite`）
-- **前端：** React、Vite、TypeScript、Tailwind CSS、shadcn/ui、TanStack Query、TanStack Table、xterm.js
-- **部署：** 单一可执行文件，由反向代理（计划使用 Caddy）提供 HTTPS
+- **前端：** React、Vite、TypeScript、TanStack Query、xterm.js
+- **部署：** Docker 或单一可执行文件，由 Cloudflare Tunnel / Caddy 提供 HTTPS
 
 ## 安全设计
 
 这个面板集中保存了多个账号的 API Key，一旦被攻破，所有已接入的账号都会受影响。因此设计上：
 
 - 管理员登录必须通过密码和 TOTP 两步验证。
-- 应用只监听回环地址，由同一台服务器上的反向代理提供 HTTPS。
+- 默认只监听回环地址；Docker 显式启用私网代理信任，由 Cloudflare Tunnel 提供 HTTPS。
 - API Key 用 AES-256-GCM 加密存储，主密钥放在独立文件中，Key 不会发送到浏览器。
 
 本地加密只能防止数据库文件泄露，无法防止服务器本身被攻破。建议只给 API Key 必需的权限，并在怀疑泄露时立即到 InstaBox 吊销。
@@ -53,11 +53,53 @@ instadeck serve
 
 打开 http://127.0.0.1:8080，按向导创建管理员、扫描二维码绑定两步验证，并保存恢复码。无需预先配置环境变量或用命令行生成主密钥。
 
-服务器部署使用 `deploy/instadeck.service` 和 `deploy/Caddyfile`：安装程序并创建服务用户后，只需修改 Caddyfile 的域名，由 Caddy 提供 HTTPS。首次设置码在服务日志中查看：`journalctl -u instadeck`，用于防止他人抢先设置。
+不用 Docker 时，可选使用 `deploy/instadeck.service` 和 `deploy/Caddyfile`：安装程序并创建服务用户后，只需修改 Caddyfile 的域名，由 Caddy 提供 HTTPS。首次设置码在服务日志中查看：`journalctl -u instadeck`，用于防止他人抢先设置。
 
 默认数据库 `panel.db` 和主密钥 `master.key` 都在当前目录的 `instadeck-data` 中；systemd 部署使用 `/var/lib/instadeck`。请备份数据库，并单独保管主密钥；主密钥丢失后无法解密 API Key。`admin backup` 仅备份数据库。全部环境变量都是可选覆盖，参见 `deploy/.env.example`。
 
 更换域名可运行 `instadeck admin set-origin https://新域名`，然后重启服务；环境变量 `INSTADECK_ORIGIN` 优先于保存的网址。管理命令须使用与服务相同的数据目录。`admin init` 保留作备用；只有验证器和恢复码都丢失时，使用 `admin reset-auth` 重置认证，随后重启服务。
+
+## Docker 和 Cloudflare Tunnel 部署
+
+1. 在仓库根目录运行：
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   默认无需参数，自动生成主密钥，管理员由首次向导创建。若使用同一 Compose 的 Tunnel 容器，先在根目录 `.env` 写入 `CLOUDFLARE_TUNNEL_TOKEN=你的Tunnel令牌`，再运行 `docker compose --profile tunnel up -d --build`。也可以使用宿主机已有的 cloudflared。端口仅发布到宿主机回环，默认 8080；可选用 `INSTADECK_PORT` 覆盖。
+
+2. 在 Cloudflare Zero Trust 中给 Tunnel 配置 Public Hostname，例如 `panel.example.com`。同一 Compose 内服务地址为 `http://instadeck:8080`；宿主机 cloudflared 使用 `http://127.0.0.1:8080`（自定义端口时相应调整）。不要改写 HTTP Host Header。
+
+3. **用公网域名 `https://panel.example.com` 打开面板完成向导**。用 `docker compose logs instadeck` 查看首次设置码，每次重启都会换新码，以最后一条为准。容器中的私网代理连接始终需要设置码。向导会保存当前网址为面板 Origin；若在 `http://127.0.0.1:8080` 完成设置，之后公网域名会被拒绝。修复方式：
+
+   ```bash
+   docker compose exec instadeck /usr/local/bin/instadeck admin set-origin https://新域名
+   docker compose restart instadeck
+   ```
+
+4. Cloudflare 侧关闭 Rocket Loader（会被 CSP 拦截）；建议增加 Cloudflare Access 作为第二道门。免费和 Pro 计划单次请求上限为 100 MB；WebSocket 默认开启，面板会发送心跳维持空闲连接，终端仍受 30 分钟空闲超时约束。
+
+5. 备份数据卷中的 `panel.db` 和 `master.key`，两者分开保管。为保证 SQLite 备份一致性，可先停止面板，再分别复制：
+
+   ```bash
+   docker compose stop instadeck
+   docker compose cp instadeck:/data/panel.db ./panel.db
+   docker compose cp instadeck:/data/master.key ./master.key
+   docker compose start instadeck
+   ```
+
+   主密钥丢失后 API Key 无法解密。也可使用 `admin backup` 进行在线数据库备份，主密钥仍须单独备份。
+
+6. 升级：
+
+   ```bash
+   git pull && docker compose up -d --build
+   ```
+
+   使用 Tunnel 容器时加上 `--profile tunnel`。
+
+镜像以非 root 用户运行，数据库和主密钥仅写入 `/data` 命名卷。镜像内置 `INSTADECK_TRUSTED_PROXY=private`，仅信任回环和私网对端的 X-Forwarded-For 最右一跳；请保持容器网络可信，勿直接向公网发布面板端口。Docker 以外默认仍拒绝非回环监听，Caddy/systemd 是不用 Docker 时的可选方式。
 
 ## 开发
 

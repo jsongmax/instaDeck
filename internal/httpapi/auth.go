@@ -26,7 +26,7 @@ func (api *API) password(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 400, "invalid_request")
 		return
 	}
-	token, err := api.dependencies.Identity.Password(r.Context(), input.Username, input.Password, ClientIP(r))
+	token, err := api.dependencies.Identity.Password(r.Context(), input.Username, input.Password, api.clientIP(r))
 	result := "challenge"
 	if err != nil {
 		result = "failure"
@@ -54,7 +54,7 @@ func (api *API) complete(w http.ResponseWriter, r *http.Request) {
 	}
 	api.authMutex.Lock()
 	defer api.authMutex.Unlock()
-	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.policy.Load().challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"), identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: ClientIP(r)})
+	token, err := api.dependencies.Identity.Complete(r.Context(), api.token(r, api.policy.Load().challengeCookie), input.Code, strings.HasSuffix(r.URL.Path, "/recovery"), identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: api.clientIP(r)})
 	if err != nil {
 		if api.event(r, "login", "failure", "", "") != nil {
 			fail(w, r, 503, "audit_unavailable")
@@ -113,7 +113,7 @@ func (api *API) reauthenticate(w http.ResponseWriter, r *http.Request) {
 	if !api.requireAudit(w, r, "reauthentication", "", "") {
 		return
 	}
-	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), input.Password, "", ClientIP(r), "reauthenticate")
+	preparation, err := api.dependencies.Identity.PrepareSecurity(r.Context(), api.token(r, api.policy.Load().sessionCookie), input.Password, "", api.clientIP(r), "reauthenticate")
 	if err != nil {
 		fail(w, r, 401, "authentication_failed")
 		return

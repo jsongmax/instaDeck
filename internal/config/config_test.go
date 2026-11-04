@@ -46,3 +46,22 @@ func TestOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedProxy(t *testing.T) {
+	for _, tt := range []struct {
+		mode, listen string
+		valid        bool
+	}{
+		{"", "0.0.0.0:8080", false}, {"", "[::]:8080", false},
+		{"private", "0.0.0.0:8080", true}, {"private", "[::]:8080", true},
+		{"public", "127.0.0.1:8080", false}, {"PRIVATE", "127.0.0.1:8080", false},
+	} {
+		c, err := FromEnv(envOf(map[string]string{"INSTADECK_TRUSTED_PROXY": tt.mode, "INSTADECK_LISTEN": tt.listen}))
+		if (err == nil) != tt.valid {
+			t.Fatalf("%+v: %v", tt, err)
+		}
+		if err == nil && c.TrustedProxy != tt.mode {
+			t.Fatal(c)
+		}
+	}
+}

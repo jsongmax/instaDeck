@@ -79,6 +79,8 @@ func New(dependencies Dependencies) (*API, error) {
 			return dependencies.Config.Origin
 		case "INSTADECK_MASTER_KEY_FILE":
 			return dependencies.Config.MasterKeyPath
+		case "INSTADECK_TRUSTED_PROXY":
+			return dependencies.Config.TrustedProxy
 		case "INSTADECK_LISTEN":
 			return dependencies.Config.ListenAddress
 		}
@@ -314,7 +316,11 @@ func (api *API) cookie(w http.ResponseWriter, name, value string, maxAge int) {
 }
 
 // ClientIP trusts only the rightmost forwarded hop from a local proxy connection.
-func ClientIP(r *http.Request) string {
+func ClientIP(r *http.Request) string { return clientIP(r, false) }
+func (api *API) clientIP(r *http.Request) string {
+	return clientIP(r, api.dependencies.Config.TrustedProxy == "private")
+}
+func clientIP(r *http.Request, private bool) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -323,7 +329,8 @@ func ClientIP(r *http.Request) string {
 	if err != nil {
 		return "invalid"
 	}
-	if address.Unmap().IsLoopback() {
+	address = address.Unmap()
+	if address.IsLoopback() || private && address.IsPrivate() {
 		values := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
 		if values != "" {
 			hops := strings.Split(values, ",")
@@ -339,7 +346,7 @@ func ClientIP(r *http.Request) string {
 
 func (api *API) event(r *http.Request, kind, result, credentialID, machineID string) error {
 	requestID, _ := r.Context().Value(requestIDKey).(string)
-	return api.dependencies.Audit.WriteEvent(r.Context(), audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: ClientIP(r)})
+	return api.dependencies.Audit.WriteEvent(r.Context(), audit.Event{Time: time.Now().UTC(), Type: kind, SubjectID: currentSession(r).AdministratorID, Result: result, CredentialID: credentialID, MachineID: machineID, RequestID: requestID, SourceAddress: api.clientIP(r)})
 }
 
 func (api *API) requireAudit(w http.ResponseWriter, r *http.Request, kind, credentialID, machineID string) bool {

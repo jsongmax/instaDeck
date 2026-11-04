@@ -12,11 +12,16 @@ import (
 type Config struct {
 	ListenAddress, DatabasePath, Origin, MasterKeyPath string
 	DataDir                                            string
+	TrustedProxy                                       string
 }
 
 func Load() (Config, error) { return FromEnv(os.Getenv) }
 func FromEnv(get func(string) string) (Config, error) {
 	c := Config{ListenAddress: get("INSTADECK_LISTEN"), DatabasePath: get("INSTADECK_DATABASE"), Origin: get("INSTADECK_ORIGIN"), MasterKeyPath: get("INSTADECK_MASTER_KEY_FILE")}
+	c.TrustedProxy = get("INSTADECK_TRUSTED_PROXY")
+	if c.TrustedProxy != "" && c.TrustedProxy != "private" {
+		return Config{}, fmt.Errorf("invalid trusted proxy mode")
+	}
 	c.DataDir = get("INSTADECK_DATA_DIR")
 	if c.DataDir == "" {
 		c.DataDir = "instadeck-data"
@@ -31,9 +36,8 @@ func FromEnv(get func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid listen address")
 	}
-	// TLS terminates at a reverse proxy on the same host, so the application
-	// must never accept plain HTTP from the network directly.
-	if listenIP := net.ParseIP(host); host != "localhost" && (listenIP == nil || !listenIP.IsLoopback()) {
+	// A network listener requires explicit private reverse proxy trust.
+	if listenIP := net.ParseIP(host); c.TrustedProxy == "" && host != "localhost" && (listenIP == nil || !listenIP.IsLoopback()) {
 		return Config{}, fmt.Errorf("listen address must be loopback")
 	}
 	if c.MasterKeyPath == "" {

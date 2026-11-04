@@ -9,6 +9,7 @@ import (
 	"instadeck/internal/terminal"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -129,7 +130,15 @@ func (api *API) websocket(w http.ResponseWriter, r *http.Request) {
 		openedBinding = binding
 		api.authMutex.Unlock()
 		locked = false
-		return &websocketFrames{connection: connection}, nil
+		frames := &websocketFrames{connection: connection}
+		heartbeatContext, stop := context.WithCancel(ctx)
+		frames.stop = stop
+		frames.done = make(chan struct{})
+		go func() {
+			defer close(frames.done)
+			websocketHeartbeat(heartbeatContext, 30*time.Second, 15*time.Second, connection.Ping, func() { _ = connection.CloseNow() })
+		}()
+		return frames, nil
 	})
 	if upgraded {
 		closeContext, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -172,6 +181,10 @@ func (response *handshakeResponse) Unwrap() http.ResponseWriter { return respons
 
 type websocketFrames struct {
 	connection    *websocket.Conn
+	stop          context.CancelFunc
+	done          chan struct{}
+	closeOnce     sync.Once
+	closeErr      error
 	writeDeadline time.Time
 }
 
@@ -199,4 +212,38 @@ func (frames *websocketFrames) SetWriteDeadline(deadline time.Time) error {
 	return nil
 }
 
-func (frames *websocketFrames) Close() error { return frames.connection.CloseNow() }
+func (frames *websocketFrames) Close() error {
+	frames.closeOnce.Do(func() {
+		if frames.stop != nil {
+			frames.stop()
+		}
+		frames.closeErr = frames.connection.CloseNow()
+		if frames.done != nil {
+			<-frames.done
+		}
+	})
+	return frames.closeErr
+}
+
+// Control frames never enter the terminal activity path.
+func websocketHeartbeat(ctx context.Context, interval, timeout time.Duration, ping func(context.Context) error, closeConnection func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return
+			}
+			pingContext, cancel := context.WithTimeout(ctx, timeout)
+			err := ping(pingContext)
+			cancel()
+			if err != nil {
+				closeConnection()
+				return
+			}
+		}
+	}
+}

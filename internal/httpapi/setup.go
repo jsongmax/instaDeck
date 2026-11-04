@@ -198,7 +198,7 @@ func (api *API) setupStart(w http.ResponseWriter, r *http.Request) {
 	if !localSetup(r) && !validCode {
 		// Only failures count, so wrong guesses from elsewhere cannot lock out
 		// the administrator who holds the correct code.
-		if !api.setup.limiter.Allow(ClientIP(r), time.Now()) {
+		if !api.setup.limiter.Allow(api.clientIP(r), time.Now()) {
 			fail(w, r, 429, "rate_limited")
 			return
 		}
@@ -294,7 +294,7 @@ func (api *API) setupComplete(w http.ResponseWriter, r *http.Request) {
 	if api.dependencies.Config.Origin != "" {
 		storedOrigin = api.dependencies.Config.Origin
 	}
-	session, token, codes, err := api.dependencies.Identity.CompleteSetup(r.Context(), api.dependencies.SetupStore, pending.username, pending.password, pending.secret, input.Code, storedOrigin, identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: ClientIP(r)})
+	session, token, codes, err := api.dependencies.Identity.CompleteSetup(r.Context(), api.dependencies.SetupStore, pending.username, pending.password, pending.secret, input.Code, storedOrigin, identity.SessionMetadata{Device: deviceSummary(r.UserAgent()), SourceAddress: api.clientIP(r)})
 	if err != nil {
 		if errors.Is(err, sqlite.ErrConflict) {
 			fail(w, r, 409, "already_initialized")

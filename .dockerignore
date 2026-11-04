@@ -1,0 +1,15 @@
+.git
+bin/
+.ccg/
+.build/
+CLAUDE.md
+**/node_modules
+web/dist
+instadeck-data
+**/instadeck-data
+**/*.db*
+**/*.key
+**/.env
+**/.env.*
+tests/integration/http-integration-*
+cmd/instadeck/serve-test-*
