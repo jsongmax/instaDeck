@@ -2,8 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"instadeck/internal/account"
 	"instadeck/internal/audit"
+	"instadeck/internal/operation"
 	"time"
 )
 
@@ -11,12 +13,7 @@ import (
 type Credential = account.Record
 
 // Action stores the original request and durable upstream tracking state.
-type Action struct {
-	ID, CredentialID, MachineID, Kind                                                     string
-	RequestBody                                                                           []byte
-	UpstreamIdempotencyKey, ClientRequestID, UpstreamOperationID, State, Phase, ErrorCode string
-	CreatedAt, UpdatedAt                                                                  time.Time
-}
+type Action = operation.Action
 
 // CreateCredential stores an encrypted credential.
 func (s *Store) CreateCredential(ctx context.Context, credential Credential) error {
@@ -83,20 +80,32 @@ func (s *Store) ListCredentials(ctx context.Context) ([]Credential, error) {
 
 // CreateAction persists an intent before any upstream request; both idempotency keys are unique.
 func (s *Store) CreateAction(ctx context.Context, action Action) error {
-	_, err := s.writer.ExecContext(ctx, "INSERT INTO actions (id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", action.ID, action.CredentialID, action.MachineID, action.Kind, action.RequestBody, action.UpstreamIdempotencyKey, action.ClientRequestID, action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.CreatedAt.UnixMilli(), action.UpdatedAt.UnixMilli())
+	_, err := s.writer.ExecContext(ctx, "INSERT INTO actions (id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at,method,path,digest,org_id,credential_version,upstream_state,attempts,next_attempt_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", action.ID, action.CredentialID, action.MachineID, action.Kind, action.RequestBody, action.UpstreamIdempotencyKey, action.ClientRequestID, action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.CreatedAt.UnixMilli(), action.UpdatedAt.UnixMilli(), action.Method, action.Path, action.Digest, action.OrgID, action.CredentialVersion, action.UpstreamState, action.Attempts, action.NextAttemptAt.UnixMilli())
 	if err != nil {
 		return storageError(err)
 	}
 	return nil
 }
 
+// CreateActionIntent stores the immutable request and audit event in one transaction.
+func (s *Store) CreateActionIntent(ctx context.Context, action Action, event audit.Event) error {
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "INSERT INTO actions (id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at,method,path,digest,org_id,credential_version,upstream_state,attempts,next_attempt_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", action.ID, action.CredentialID, action.MachineID, action.Kind, action.RequestBody, action.UpstreamIdempotencyKey, action.ClientRequestID, action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.CreatedAt.UnixMilli(), action.UpdatedAt.UnixMilli(), action.Method, action.Path, action.Digest, action.OrgID, action.CredentialVersion, action.UpstreamState, action.Attempts, action.NextAttemptAt.UnixMilli())
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, "INSERT INTO audit_events (time,type,subject_id,credential_id,machine_id,action_id,result,request_id,source_address,detail) VALUES (?,?,?,?,?,?,?,?,?,?)", event.Time.UnixMilli(), event.Type, event.SubjectID, event.CredentialID, event.MachineID, event.ActionID, event.Result, event.RequestID, event.SourceAddress, event.Detail())
+		return err
+	})
+}
+
 // UpdateAction updates tracking results, preserving the original request and idempotency keys.
 func (s *Store) UpdateAction(ctx context.Context, action Action) error {
-	return requireOne(s.writer.ExecContext(ctx, "UPDATE actions SET upstream_operation_id=?,state=?,phase=?,error_code=?,updated_at=? WHERE id=?", action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.UpdatedAt.UnixMilli(), action.ID))
+	return requireOne(s.writer.ExecContext(ctx, "UPDATE actions SET upstream_operation_id=?,state=?,phase=?,error_code=?,updated_at=?,upstream_state=?,attempts=?,next_attempt_at=? WHERE id=?", action.UpstreamOperationID, action.State, action.Phase, action.ErrorCode, action.UpdatedAt.UnixMilli(), action.UpstreamState, action.Attempts, action.NextAttemptAt.UnixMilli(), action.ID))
 }
 
 func (s *Store) actions(ctx context.Context, where string, args ...any) ([]Action, error) {
-	rows, err := s.reader.QueryContext(ctx, "SELECT id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at FROM actions "+where+" ORDER BY created_at,id", args...)
+	rows, err := s.reader.QueryContext(ctx, "SELECT id,credential_id,machine_id,kind,request_body,upstream_idempotency_key,client_request_id,upstream_operation_id,state,phase,error_code,created_at,updated_at,method,path,digest,org_id,credential_version,upstream_state,attempts,next_attempt_at FROM actions "+where+" ORDER BY created_at,id", args...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -104,10 +113,11 @@ func (s *Store) actions(ctx context.Context, where string, args ...any) ([]Actio
 	records := []Action{}
 	for rows.Next() {
 		var action Action
-		var created, updated int64
-		if rows.Scan(&action.ID, &action.CredentialID, &action.MachineID, &action.Kind, &action.RequestBody, &action.UpstreamIdempotencyKey, &action.ClientRequestID, &action.UpstreamOperationID, &action.State, &action.Phase, &action.ErrorCode, &created, &updated) != nil {
+		var created, updated, nextAttempt int64
+		if rows.Scan(&action.ID, &action.CredentialID, &action.MachineID, &action.Kind, &action.RequestBody, &action.UpstreamIdempotencyKey, &action.ClientRequestID, &action.UpstreamOperationID, &action.State, &action.Phase, &action.ErrorCode, &created, &updated, &action.Method, &action.Path, &action.Digest, &action.OrgID, &action.CredentialVersion, &action.UpstreamState, &action.Attempts, &nextAttempt) != nil {
 			return nil, ErrRejected
 		}
+		action.NextAttemptAt = time.UnixMilli(nextAttempt).UTC()
 		action.CreatedAt = time.UnixMilli(created).UTC()
 		action.UpdatedAt = time.UnixMilli(updated).UTC()
 		records = append(records, action)
@@ -144,7 +154,7 @@ func (s *Store) ActionByClientRequestID(ctx context.Context, id string) (Action,
 
 // ListUnfinishedActions returns all actions needing restart recovery.
 func (s *Store) ListUnfinishedActions(ctx context.Context) ([]Action, error) {
-	return s.actions(ctx, "WHERE state NOT IN ('succeeded','failed')")
+	return s.actions(ctx, "WHERE state IN ('pending','submitting','tracking')")
 }
 
 var _ audit.Writer = (*Store)(nil)
@@ -191,4 +201,13 @@ func (s *Store) ReadAuditEvents(ctx context.Context, after int64, limit int) ([]
 		return nil, ErrRejected
 	}
 	return records, nil
+}
+
+// FindAction resolves a client request while distinguishing absence from storage failure.
+func (s *Store) FindAction(ctx context.Context, id string) (Action, bool, error) {
+	action, err := s.ActionByClientRequestID(ctx, id)
+	if err == ErrNotFound {
+		return Action{}, false, nil
+	}
+	return action, err == nil, err
 }

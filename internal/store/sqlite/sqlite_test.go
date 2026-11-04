@@ -278,7 +278,7 @@ func TestRecordsAuditBackup(t *testing.T) {
 	if err != nil || len(credentials) != 1 || credentials[0].Name != "updated" {
 		t.Fatal("credential roundtrip")
 	}
-	action := Action{ID: "action", CredentialID: credential.ID, ClientRequestID: "client", UpstreamIdempotencyKey: "upstream", State: "queued", RequestBody: []byte(`{"name":"example"}`), CreatedAt: now, UpdatedAt: now}
+	action := Action{ID: "action", CredentialID: credential.ID, ClientRequestID: "client", UpstreamIdempotencyKey: "upstream", State: "pending", RequestBody: []byte(`{"name":"example"}`), CreatedAt: now, UpdatedAt: now}
 	if err := store.CreateAction(ctx, action); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestRecordsAuditBackup(t *testing.T) {
 	if records, err := store.ListUnfinishedActions(ctx); err != nil || len(records) != 1 {
 		t.Fatal("unfinished actions")
 	}
-	action.State = "succeeded"
+	action.State = "completed"
 	if err := store.UpdateAction(ctx, action); err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestRecordsAuditBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backup.Close()
-	if record, err := backup.ActionByID(ctx, action.ID); err != nil || record.State != "succeeded" {
+	if record, err := backup.ActionByID(ctx, action.ID); err != nil || record.State != "completed" {
 		t.Fatal("backup missing committed data")
 	}
 	if err := store.DeleteCredential(ctx, credential.ID); err != nil {
