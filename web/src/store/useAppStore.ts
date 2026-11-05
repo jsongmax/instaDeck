@@ -23,6 +23,7 @@ export interface CreateRecord {
   id: string
   name: string
   credentialId: string
+  timestamp: number
   status: 'running' | 'failed'
   message?: string
 }
@@ -33,6 +34,37 @@ export interface FailedActionInfo {
   credentialId: string
   errorCode: string
   confirmName?: string
+}
+
+const createStorageKey = 'instadeck-create-records'
+
+function saveCreateRecords(records: Record<string, CreateRecord>) {
+  try {
+    if (!Object.keys(records).length) localStorage.removeItem(createStorageKey)
+    else localStorage.setItem(createStorageKey, JSON.stringify(Object.values(records).map(
+      ({ id, name, credentialId, status, message, timestamp }) => ({ id, name, credentialId, status, message, timestamp }),
+    )))
+  } catch { }
+}
+
+function loadCreateRecords(): Record<string, CreateRecord> {
+  try {
+    const values: unknown = JSON.parse(localStorage.getItem(createStorageKey) || '[]')
+    if (!Array.isArray(values)) return {}
+    const records: Record<string, CreateRecord> = {}
+    for (const value of values) {
+      if (!value || typeof value !== 'object') continue
+      const { id, name, credentialId, status, message, timestamp } = value
+      if (typeof id !== 'string' || !id || typeof name !== 'string' ||
+          typeof credentialId !== 'string' || !credentialId ||
+          (status !== 'running' && status !== 'failed') ||
+          (message !== undefined && typeof message !== 'string') ||
+          typeof timestamp !== 'number' || !Number.isFinite(timestamp) ||
+          timestamp > Date.now() || Date.now() - timestamp >= 24 * 3600_000) continue
+      Object.defineProperty(records, id, { value: { id, name, credentialId, status, message, timestamp }, enumerable: true, configurable: true, writable: true })
+    }
+    return records
+  } catch { return {} }
 }
 
 function loadSavedSkin(): string {
@@ -111,6 +143,7 @@ interface AppState {
   setSession: (session: SessionInfo | null) => void
   updateCsrfToken: (csrfToken: string) => void
   setAuthRequired: (required: boolean) => void
+  clearCreateRecords: () => void
   setSessionChecked: (checked: boolean) => void
 
   requestReauth: () => Promise<boolean>
@@ -176,12 +209,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   topZ: 10,
   winSeq: 0,
 
-  setSession: (session) =>
-    set({
-      session,
-      authRequired: session === null,
-      sessionChecked: true,
-    }),
+  setSession: (session) => {
+    const records = session ? (get().session ? get().createRecords : loadCreateRecords()) : {}
+    const trackedActions = session ? { ...get().trackedActions } : {}
+    if (session && !get().session) {
+      for (const record of Object.values(records)) {
+        if (record.status === 'running') trackedActions[record.id] = {
+          id: record.id, credentialId: record.credentialId, machineId: '', kind: 'create',
+          state: 'tracking', createdAt: new Date(record.timestamp).toISOString(), updatedAt: new Date(record.timestamp).toISOString(),
+        }
+      }
+    }
+    // Being signed out does not forget a create still running: it resumes at the next
+    // login. Only an explicit logout clears what is stored.
+    if (session) saveCreateRecords(records)
+    set({ session, createRecords: records, trackedActions, authRequired: session === null, sessionChecked: true })
+  },
 
   updateCsrfToken: (csrfToken) =>
     set((s) => ({
@@ -195,11 +238,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
     })),
 
-  setAuthRequired: (required) =>
-    set({
-      authRequired: required,
-      sessionChecked: true,
-    }),
+  setAuthRequired: (required) => set({ authRequired: required, sessionChecked: true }),
+
+  clearCreateRecords: () => {
+    saveCreateRecords({})
+    set({ createRecords: {}, trackedActions: {} })
+  },
 
   setSessionChecked: (checked) => set({ sessionChecked: checked }),
 
@@ -263,7 +307,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       createRecords: {
         ...s.createRecords,
-        [actionId]: { id: actionId, name, credentialId, status: 'running' },
+        [actionId]: { id: actionId, name, credentialId, status: 'running', timestamp: Date.now() },
       },
     })),
 
@@ -422,3 +466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       terminals: s.terminals.map((t) => (t.id === id ? { ...t, ...geo } : t)),
     })),
 }))
+
+useAppStore.subscribe((state, previous) => {
+  if (state.createRecords !== previous.createRecords && state.session) saveCreateRecords(state.createRecords)
+})

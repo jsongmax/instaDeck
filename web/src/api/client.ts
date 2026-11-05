@@ -111,7 +111,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiError(res.status, code, message, retryable, requestId)
   }
 
-  if (res.status === 401 && !options.skipAuthRedirect) {
+  // A mistyped password or code does not end the session, so the form stays and says so.
+  if (res.status === 401 && code !== 'authentication_failed' && !options.skipAuthRedirect) {
     useAppStore.getState().setAuthRequired(true)
   }
 

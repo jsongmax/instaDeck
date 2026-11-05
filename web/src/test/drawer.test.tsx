@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from 'vitest'
+import { api } from '../api/client'
 import type { FleetMachine } from '../api/types'
 import { MachineDrawer } from '../components/MachineDrawer'
 import { computeAccountQuota } from '../hooks/useFleetData'
@@ -96,4 +97,22 @@ it('操作排在快照、端口和机器信息之前', async () => {
   const spec = screen.getByText('规格')
   expect(actions.compareDocumentPosition(snapshot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(actions.compareDocumentPosition(spec) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
+it('输错密码或验证码不会跳回登录，会话失效才会', async () => {
+  useAppStore.setState({ authRequired: false })
+  server.use(
+    http.post('/api/v1/security/recovery-codes', () =>
+      HttpResponse.json({ error: { code: 'authentication_failed' } }, { status: 401 }),
+    ),
+    http.get('/api/v1/sessions', () =>
+      HttpResponse.json({ error: { code: 'unauthorized' } }, { status: 401 }),
+    ),
+  )
+  await expect(api.regenerateRecoveryCodes('x', '000000')).rejects.toMatchObject({
+    code: 'authentication_failed',
+  })
+  expect(useAppStore.getState().authRequired).toBe(false)
+  await expect(api.getSessions()).rejects.toMatchObject({ code: 'unauthorized' })
+  expect(useAppStore.getState().authRequired).toBe(true)
 })

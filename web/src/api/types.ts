@@ -120,6 +120,7 @@ export interface MachineTemplate {
   id: string
   version: string
   arch: string
+  planAllowed?: boolean
   creatable: boolean
   default?: boolean
   defaultSpec: {

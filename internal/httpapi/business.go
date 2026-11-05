@@ -265,7 +265,14 @@ func (api *API) templates(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, 503, "unavailable")
 		return
 	}
+	var me instabox.Me
+	if identityClient, identityErr := api.dependencies.Accounts.ClientForCredential(r.Context(), r.URL.Query().Get("credentialId")); identityErr == nil {
+		if identity, identityErr := identityClient.GetMe(r.Context()); identityErr == nil {
+			me = identity
+		}
+	}
 	type templateDTO struct {
+		PlanAllowed bool                 `json:"planAllowed"`
 		ID          string               `json:"id"`
 		Version     string               `json:"version"`
 		Arch        string               `json:"arch"`
@@ -275,7 +282,7 @@ func (api *API) templates(w http.ResponseWriter, r *http.Request) {
 	}
 	values := make([]templateDTO, 0, len(value.Templates))
 	for _, template := range value.Templates {
-		values = append(values, templateDTO{ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, Default: template.Default, DefaultSpec: template.DefaultSpec})
+		values = append(values, templateDTO{PlanAllowed: templatePlanAllowed(me.Org.Tier, template.ID), ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, Default: template.Default, DefaultSpec: template.DefaultSpec})
 	}
 	writeJSON(w, 200, map[string]any{"templates": values})
 }
@@ -382,4 +389,16 @@ func (api *API) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, publicAction(value))
+}
+
+// Free-plan template restrictions: https://api.instabox.sh/v1/openapi.json (POST /v1/machines).
+func templatePlanAllowed(tier, id string) bool {
+	if tier != "free" {
+		return true
+	}
+	switch id {
+	case "agent-browser", "android", "ci":
+		return true
+	}
+	return false
 }

@@ -316,3 +316,50 @@ func TestRenameMachine(t *testing.T) {
 		t.Fatalf("audit: %d %s", r.Code, r.Body)
 	}
 }
+
+func TestTemplatesPlanAllowed(t *testing.T) {
+	f := newFixture(t, false)
+	cookie, csrf := f.login(t)
+	a := f.addAccount(t, cookie, csrf)
+	for _, tier := range []string{"free", "pro", "builder", "team", "enterprise", "", "future", "failure"} {
+		t.Run(tier, func(t *testing.T) {
+			f.resource = func(w http.ResponseWriter, r *http.Request) bool {
+				switch r.URL.Path {
+				case "/v1/me":
+					if tier == "failure" {
+						respond(w, 503, map[string]string{"error": "unavailable"})
+					} else {
+						respond(w, 200, map[string]any{"org": map[string]string{"tier": tier}})
+					}
+					return true
+				case "/v1/templates":
+					respond(w, 200, map[string]any{"templates": []map[string]any{{"id": "agent-browser"}, {"id": "android"}, {"id": "ci"}, {"id": "ubuntu"}}})
+					return true
+				}
+				return false
+			}
+			response := f.request("GET", "/api/v1/templates?credentialId="+a.CredentialID, "", cookie, "", "")
+			if response.Code != 200 {
+				t.Fatal(response.Code, response.Body)
+			}
+			var body struct {
+				Templates []struct {
+					ID          string
+					PlanAllowed bool
+				}
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Templates) != 4 {
+				t.Fatal(response.Body)
+			}
+			for _, template := range body.Templates {
+				want := tier != "free" || template.ID != "ubuntu"
+				if template.PlanAllowed != want {
+					t.Fatalf("%s allowed=%v, want %v", template.ID, template.PlanAllowed, want)
+				}
+			}
+		})
+	}
+}

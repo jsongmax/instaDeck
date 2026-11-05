@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
-import { formatActionError, getAccountColor, getMachineStateMeta } from '../api/errors'
+import { ApiError, formatActionError, getAccountColor, getMachineStateMeta } from '../api/errors'
 import type { Account, ActionKind, FleetAccount, FleetMachine, FleetResponse } from '../api/types'
 import { useAppStore } from '../store/useAppStore'
 
@@ -60,6 +60,7 @@ export function machineQuotaFull(
 
 export function useFleetData() {
   const queryClient = useQueryClient()
+  const session = useAppStore((s) => s.session)
   const authRequired = useAppStore((s) => s.authRequired)
   const sessionChecked = useAppStore((s) => s.sessionChecked)
   const trackedActions = useAppStore((s) => s.trackedActions)
@@ -80,7 +81,7 @@ export function useFleetData() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
 
-  const enabled = sessionChecked && !authRequired && !pageHidden
+  const enabled = Boolean(session) && sessionChecked && !authRequired && !pageHidden
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -126,6 +127,8 @@ export function useFleetData() {
       pollingBusyRef.current.add(actionId)
       try {
         const updated = await api.getAction(actionId)
+        if (!useAppStore.getState().session || !useAppStore.getState().trackedActions[actionId]) return
+        const isCreate = updated.kind === 'create' || Boolean(useAppStore.getState().createRecords[actionId])
         const isTerminal = updated.state === 'completed' || updated.state === 'unknown'
         if (!isTerminal) {
           upsertTrackedAction(updated)
@@ -136,7 +139,7 @@ export function useFleetData() {
         const machineId = updated.machineId
 
         if (updated.upstreamState === 'failed' || Boolean(updated.errorCode)) {
-          if (machineId) {
+          if (machineId && !isCreate) {
             setMachineUnknownAction(machineId, false)
             setMachineFailedAction(machineId, {
               actionId: updated.id,
@@ -152,7 +155,7 @@ export function useFleetData() {
             useAppStore.getState().showToast(`创建机器失败：${message}`)
           }
         } else if (updated.state === 'unknown') {
-          if (machineId) {
+          if (machineId && !isCreate) {
             setMachineFailedAction(machineId, null)
             setMachineUnknownAction(machineId, true)
           } else {
@@ -161,7 +164,7 @@ export function useFleetData() {
             useAppStore.getState().showToast(`创建机器${message}`)
           }
         } else {
-          if (machineId) {
+          if (machineId && !isCreate) {
             setMachineFailedAction(machineId, null)
             setMachineUnknownAction(machineId, false)
             triggerRowFlash(machineId, 'ok')
@@ -173,7 +176,11 @@ export function useFleetData() {
         if (useAppStore.getState().createRecords[actionId]?.status === 'running') {
           useAppStore.getState().removeCreateRecord(actionId)
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          useAppStore.getState().removeCreateRecord(actionId)
+          removeTrackedAction(actionId)
+        }
         // transient network error while polling action; will retry next tick
       } finally {
         pollingBusyRef.current.delete(actionId)

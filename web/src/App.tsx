@@ -197,6 +197,7 @@ function WorkspaceShell() {
     } catch {
       // ignore logout error
     }
+    useAppStore.getState().clearCreateRecords()
     setAuthRequired(true)
     showToast('已退出登录')
   }

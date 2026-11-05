@@ -15,6 +15,7 @@ import (
 
 func TestAdminResetAuth(t *testing.T) {
 	directory := t.TempDir()
+	t.Setenv("INSTADECK_DATA_DIR", directory)
 	keyPath, databasePath := filepath.Join(directory, "master.key"), filepath.Join(directory, "panel.db")
 	t.Setenv("INSTADECK_MASTER_KEY_FILE", keyPath)
 	t.Setenv("INSTADECK_DATABASE", databasePath)

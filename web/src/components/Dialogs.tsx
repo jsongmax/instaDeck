@@ -389,10 +389,11 @@ function CreateMachineForm({
   })
 
   const creatableTemplates = (templatesQuery.data?.templates ?? []).filter((t) => t.creatable)
+  const allowedTemplates = creatableTemplates.filter((t) => t.planAllowed !== false)
   const activeTemplateId =
-    selectedTplId && creatableTemplates.some((t) => t.id === selectedTplId)
+    selectedTplId && allowedTemplates.some((t) => t.id === selectedTplId)
       ? selectedTplId
-      : (creatableTemplates.find((t) => t.default) ?? creatableTemplates[0])?.id ?? 'default'
+      : (allowedTemplates.find((t) => t.default) ?? allowedTemplates[0])?.id ?? ''
 
   const handleTemplateChange = (id: string) => {
     setSelectedTplId(id)
@@ -418,6 +419,7 @@ function CreateMachineForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!snapshotId && !activeTemplateId) return
     const trimmed = name.trim()
     if (!credentialId) {
       setErrMsg('请选择账号')
@@ -503,7 +505,7 @@ function CreateMachineForm({
                 value={a.credentialId}
                 disabled={disabled}
                 checked={credentialId === a.credentialId}
-                onChange={() => setCredentialId(a.credentialId)}
+                onChange={() => { setCredentialId(a.credentialId); setSelectedTplId('') }}
               />
               <Swatch color={a.color} />
               {a.name}
@@ -532,14 +534,15 @@ function CreateMachineForm({
             value={activeTemplateId}
             onChange={(e) => handleTemplateChange(e.target.value)}
           >
+            {!activeTemplateId && creatableTemplates.length > 0 ? <option value="">暂无可用模板</option> : null}
             {creatableTemplates.length > 0 ? (
               creatableTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.id}
+                <option key={t.id} value={t.id} disabled={t.planAllowed === false}>
+                  {t.id}{t.planAllowed === false ? '（当前套餐不可用）' : ''}
                 </option>
               ))
             ) : (
-              <option value="default">default</option>
+              <option value="">暂无可用模板</option>
             )}
           </select>
         </label> : <p className="muted">从快照新建机器：{snapshotId}</p>}
@@ -559,6 +562,8 @@ function CreateMachineForm({
           </select>
         </label>
       </div>
+      {!snapshotId && templatesQuery.isSuccess && !activeTemplateId ? <div className="errline">这个账号暂无可用模板</div> : null}
+      {!snapshotId && templatesQuery.isError ? <div className="errline">无法读取模板列表，请稍后重试</div> : null}
       {errMsg ? <div className="errline">{errMsg}</div> : null}
       <div className="dlg-foot">
         <button type="button" className="btn" onClick={onClose}>
@@ -567,7 +572,7 @@ function CreateMachineForm({
         <button
           type="submit"
           className={`btn primary ${submitting ? 'loading' : ''}`}
-          disabled={submitting}
+          disabled={submitting || (!snapshotId && !activeTemplateId)}
         >
           创建
         </button>
