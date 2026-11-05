@@ -20,6 +20,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # Checked first, so a tag without notes publishes nothing at all.
+      - name: Check release notes
+        if: github.ref_type == 'tag'
+        run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > /dev/null
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -109,14 +113,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="$GITHUB_REF_NAME"
-          # A re-run replaces the files of the release it already created.
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            bash scripts/release-notes.sh "$tag"
+            echo
+            echo "**Docker 镜像：** \`ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}\`"
+          } > "$notes"
+          # A re-run replaces the files and notes of the release it already created.
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --notes-file "$notes"
             exit 0
           fi
           flags=()
           if [[ "$tag" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          gh release create "$tag" dist/* --verify-tag --generate-notes "${flags[@]}" \
-            --notes "Docker 镜像：\`ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}\`"
+          gh release create "$tag" dist/* --verify-tag --notes-file "$notes" "${flags[@]}"

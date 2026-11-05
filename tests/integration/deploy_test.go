@@ -62,7 +62,7 @@ func TestDockerDeploymentFiles(t *testing.T) {
 	}
 	compose := read("docker-compose.yml")
 	workflow := read(filepath.Join(".github", "workflows", "ci.yml"))
-	for _, value := range []string{"needs: test", "go test -race", "linux/amd64,linux/arm64", "push: ${{ github.event_name != 'pull_request' }}", "packages: write", "needs: [test, image]", "contents: write", "scripts/build-release.sh"} {
+	for _, value := range []string{"needs: test", "go test -race", "linux/amd64,linux/arm64", "push: ${{ github.event_name != 'pull_request' }}", "packages: write", "needs: [test, image]", "contents: write", "scripts/build-release.sh", "scripts/release-notes.sh"} {
 		if !strings.Contains(workflow, value) {
 			t.Errorf("workflow missing %s", value)
 		}
