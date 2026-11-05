@@ -24,6 +24,9 @@ import (
 	"time"
 )
 
+// version is set at build time; see scripts/build-release.sh and the Dockerfile.
+var version = "dev"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -39,7 +42,11 @@ func identityOptions() identity.Options {
 
 func run(ctx context.Context, arguments []string, input io.Reader, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: instadeck serve | healthcheck | admin init|generate-key|backup|rotate-key|reset-auth [username] (reset-auth requires access to the master key and database)")
+		return errors.New("usage: instadeck serve | version | healthcheck | admin init|generate-key|backup|rotate-key|reset-auth|set-origin (reset-auth requires access to the master key and database)")
+	}
+	if len(arguments) == 1 && arguments[0] == "version" {
+		_, err := fmt.Fprintln(output, version)
+		return err
 	}
 	if len(arguments) == 1 && arguments[0] == "healthcheck" {
 		return healthcheck(ctx)

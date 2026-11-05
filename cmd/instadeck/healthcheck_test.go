@@ -46,3 +46,13 @@ func TestHealthcheckCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionCommand(t *testing.T) {
+	var output strings.Builder
+	if err := run(context.Background(), []string{"version"}, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != version+"\n" {
+		t.Fatalf("got %q", output.String())
+	}
+}

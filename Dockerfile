@@ -12,7 +12,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/instadeck ./cmd/instadeck
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/instadeck ./cmd/instadeck
 RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot

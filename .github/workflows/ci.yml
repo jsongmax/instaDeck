@@ -1,4 +1,4 @@
-name: Test and publish image
+name: CI
 
 on:
   push:
@@ -79,5 +79,44 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_type == 'tag' && steps.meta.outputs.version || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Runs after the image so a release never points at an image that failed to publish.
+  release:
+    if: github.ref_type == 'tag'
+    needs: [test, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build archives
+        run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # A re-run replaces the files of the release it already created.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            exit 0
+          fi
+          flags=()
+          if [[ "$tag" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$tag" dist/* --verify-tag --generate-notes "${flags[@]}" \
+            --notes "Docker 镜像：\`ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}\`"
