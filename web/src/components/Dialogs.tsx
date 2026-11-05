@@ -21,11 +21,15 @@ export function ModalDialog({
   children: ReactNode
 }) {
   const dlgRef = useRef<HTMLDialogElement | null>(null)
+  // A native modal sits above everything and makes the rest of the page inert, so it
+  // steps aside for the login overlay and returns afterwards with its state intact.
+  const authRequired = useAppStore((s) => s.authRequired)
+  const showing = open && !authRequired
 
   useEffect(() => {
     const el = dlgRef.current
     if (!el) return
-    if (open) {
+    if (showing) {
       if (!el.open && typeof el.showModal === 'function') {
         try {
           el.showModal()
@@ -46,7 +50,7 @@ export function ModalDialog({
         el.removeAttribute('open')
       }
     }
-  }, [open])
+  }, [showing])
 
   if (!open) return null
 
@@ -55,6 +59,8 @@ export function ModalDialog({
       ref={dlgRef}
       className={wide ? 'wide-dlg' : undefined}
       onCancel={(e) => {
+        // React bubbles cancel through the component tree, into any dialog around this one.
+        e.stopPropagation()
         e.preventDefault()
         onClose()
       }}

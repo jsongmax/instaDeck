@@ -428,3 +428,33 @@ dialog.wide-dlg { width: min(680px, calc(100vw - 32px)); }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .aurora i { animation: none; }
 }
+
+/* 文件管理 */
+.files-dlg { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.files-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.files-head h2 { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.files-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.files-path-input { flex: 1 1 220px; min-width: 0; }
+.files-table-wrap { max-height: 48vh; overflow: auto; max-width: 100%; }
+.files-table th, .files-table td { white-space: normal; overflow-wrap: anywhere; }
+.files-cell-name { min-width: 140px; max-width: 320px; overflow-wrap: anywhere; word-break: break-word; }
+.files-name-btn { text-align: left; overflow-wrap: anywhere; word-break: break-word; font-size: 12.5px; }
+.files-name-text, .files-symlink-target { overflow-wrap: anywhere; word-break: break-word; }
+.files-uploads { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); max-height: 180px; overflow-y: auto; }
+.files-upload-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; }
+.files-upload-name { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+.files-upload-pct { min-width: 40px; text-align: right; }
+.files-upload-state { min-width: 84px; }
+.files-preview-box { min-width: 0; }
+.files-preview-card { max-width: 100%; padding: 12px; gap: 10px; min-width: 0; }
+.files-preview-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.files-preview-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.files-preview-pre { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--term-bg); color: var(--term-ink); max-height: 36vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+dialog.wide-dlg:has(.files-dlg) { width: min(1040px, calc(100vw - 32px)); }
+.files-table td:nth-child(2), .files-table th:nth-child(2), .files-table td:nth-child(3), .files-table td:nth-child(4) { white-space: nowrap; }
+.files-table a.btn { color: var(--ink); text-decoration: none; }
+.files-table .btn-row { flex-wrap: nowrap; }
+@media (max-width: 760px) {
+  .files-table td:nth-child(3), .files-table th:nth-child(3), .files-table td:nth-child(4), .files-table th:nth-child(4) { display: none; }
+  .files-table .btn-row { flex-wrap: wrap; }
+}

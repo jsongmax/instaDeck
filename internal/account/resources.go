@@ -3,9 +3,14 @@ package account
 import (
 	"context"
 	"instadeck/internal/instabox"
+	"io"
 )
 
 type ResourceClient interface {
+	ListFiles(context.Context, string, string) (instabox.Files, error)
+	DownloadFile(context.Context, string, string) (io.ReadCloser, int64, error)
+	WriteFile(context.Context, string, string, bool, io.Reader, int64) (instabox.FileWritten, error)
+	Exec(context.Context, string, instabox.ExecRequest) (instabox.ExecResult, error)
 	ListPorts(context.Context, string) (instabox.PublicPortList, error)
 	PublishPort(context.Context, string, instabox.PublishPortRequest) (instabox.PublicPort, error)
 	DeletePort(context.Context, string, int) error

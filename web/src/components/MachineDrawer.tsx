@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import {
   ApiError,
@@ -12,9 +12,13 @@ import type { ActionKind, FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
 import { useAppStore } from '../store/useAppStore'
 import { DeleteMachineDialog, RenameMachineDialog } from './Dialogs'
+import { FilesDialog } from './FilesDialog'
 import { PortsPanel } from './PortsPanel'
 import { SaveSnapshot } from './SnapshotsPage'
 import { MachineStateBadge, Swatch } from './Icons'
+
+const OUTSIDE_CLICK_IGNORED =
+  '.drawer, tr.rowlink, button, a, input, select, textarea, label, .win, .login, .toast'
 
 export function MachineDrawer({
   machines,
@@ -37,6 +41,11 @@ export function MachineDrawer({
   const [selectedCredByMachine, setSelectedCredByMachine] = useState<Record<string, string>>({})
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
+  // Pinned when opened: the preferred account can change on any refresh, and that must
+  // not restart the dialog and its uploads.
+  const [filesTarget, setFilesTarget] = useState<{ machineId: string; credentialId: string } | null>(
+    null,
+  )
 
   const preferredCredId = machine ? selectPreferredSource(machine)?.credentialId ?? '' : ''
   const customCredId = machine ? selectedCredByMachine[machine.id] : undefined
@@ -45,6 +54,22 @@ export function MachineDrawer({
       ? customCredId
       : preferredCredId
   const deleteDialogOpen = Boolean(machine && deleteTargetId === machine.id)
+
+  // A click on blank space outside closes the details. Controls, rows and text being
+  // selected keep working as they did; rows switch or toggle the details themselves.
+  useEffect(() => {
+    if (!selectedMachineId) return
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element) || !target.isConnected) return
+      if (document.querySelector('dialog[open]')) return
+      if (!window.getSelection()?.isCollapsed) return
+      if (target.closest(OUTSIDE_CLICK_IGNORED)) return
+      setSelectedMachineId(null)
+    }
+    document.addEventListener('click', closeOnOutsideClick)
+    return () => document.removeEventListener('click', closeOnOutsideClick)
+  }, [selectedMachineId, setSelectedMachineId])
 
   const detailQuery = useQuery({
     queryKey: ['machineDetail', machine?.id, activeCredId],
@@ -140,22 +165,9 @@ export function MachineDrawer({
         </div>
 
         <div className="drawer-body">
- <SaveSnapshot key={`snapshot:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
- <PortsPanel key={`ports:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
           {machine.conflict ? (
             <div className="notice warn">账号之间状态不一致，请确认各账号同步状态。</div>
           ) : null}
-
-          <dl className="kv">
-            <dt>规格</dt>
-            <dd>{specText}</dd>
-            <dt>机器 ID</dt>
-            <dd className="mono">{machine.id}</dd>
-            <dt>组织 ID</dt>
-            <dd className="mono">{detailQuery.data?.orgId || machine.orgId || '—'}</dd>
-            <dt>数据更新</dt>
-            <dd>{formatRelativeTime(machine.fetchedAt)}</dd>
-          </dl>
 
           {machine.sources.length > 1 ? (
             <div>
@@ -248,6 +260,18 @@ export function MachineDrawer({
                   启动
                 </button>
               ) : null}
+              <button
+                type="button"
+                className="btn"
+                disabled={
+                  locked ||
+                  machine.state !== 'running' ||
+                  activeAccount?.capabilities.write === 'denied'
+                }
+                onClick={() => setFilesTarget({ machineId: machine.id, credentialId: activeCredId })}
+              >
+                文件
+              </button>
               {/* Upstream allows a rename in any state, also while an operation runs. */}
               <button
                 type="button"
@@ -273,6 +297,20 @@ export function MachineDrawer({
             ) : null}
           </div>
 
+ <SaveSnapshot key={`snapshot:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
+ <PortsPanel key={`ports:${machine.id}:${activeCredId}`} machineId={machine.id} credentialId={activeCredId}/>
+
+          <dl className="kv">
+            <dt>规格</dt>
+            <dd>{specText}</dd>
+            <dt>机器 ID</dt>
+            <dd className="mono">{machine.id}</dd>
+            <dt>组织 ID</dt>
+            <dd className="mono">{detailQuery.data?.orgId || machine.orgId || '—'}</dd>
+            <dt>数据更新</dt>
+            <dd>{formatRelativeTime(machine.fetchedAt)}</dd>
+          </dl>
+
           {isAccountInvalid ? (
             <div className="notice warn">
               Key 已失效或已暂停，这里显示的是最后一次成功获取的数据。
@@ -280,6 +318,14 @@ export function MachineDrawer({
           ) : null}
         </div>
       </aside>
+
+      <FilesDialog
+        open={filesTarget?.machineId === machine.id}
+        machineId={machine.id}
+        machineName={machine.name}
+        credentialId={filesTarget?.credentialId ?? activeCredId}
+        onClose={() => setFilesTarget(null)}
+      />
 
       <RenameMachineDialog
         open={renameTargetId === machine.id}

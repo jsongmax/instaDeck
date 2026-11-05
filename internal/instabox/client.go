@@ -33,6 +33,7 @@ type Options struct {
 type Client struct {
 	key              string
 	baseURL          string
+	stream           http.Client
 	normal           http.Client
 	poll             http.Client
 	maxResponseBytes int64
@@ -98,7 +99,7 @@ func NewClient(key string, options Options) (*Client, error) {
 		return nil, errors.New("instabox: invalid client limits")
 	}
 	rejectRedirect := func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{key: key, baseURL: strings.TrimRight(baseURL, "/"), normal: http.Client{Timeout: options.RequestTimeout, CheckRedirect: rejectRedirect}, poll: http.Client{Timeout: options.PollTimeout, CheckRedirect: rejectRedirect}, maxResponseBytes: options.MaxResponseBytes}, nil
+	return &Client{key: key, baseURL: strings.TrimRight(baseURL, "/"), stream: http.Client{CheckRedirect: rejectRedirect}, normal: http.Client{Timeout: options.RequestTimeout, CheckRedirect: rejectRedirect}, poll: http.Client{Timeout: options.PollTimeout, CheckRedirect: rejectRedirect}, maxResponseBytes: options.MaxResponseBytes}, nil
 }
 
 func (client *Client) request(ctx context.Context, method, path string, query url.Values, body any, key, confirmation string, status int, poll bool, result any) error {
@@ -158,6 +159,10 @@ func (client *Client) sendRequest(ctx context.Context, method, path string, quer
 		return &APIError{Kind: "transport", cause: cause}
 	}
 	defer response.Body.Close()
+	return client.decodeResponse(ctx, response, status, result)
+}
+
+func (client *Client) decodeResponse(ctx context.Context, response *http.Response, status int, result any) error {
 	raw, err := io.ReadAll(io.LimitReader(response.Body, client.maxResponseBytes+1))
 	if err != nil {
 		return &APIError{StatusCode: response.StatusCode, Kind: "read", cause: ctx.Err()}

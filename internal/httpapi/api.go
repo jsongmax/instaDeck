@@ -245,7 +245,10 @@ func (api *API) boundary(next http.Handler) http.Handler {
 		wrapped := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		started := time.Now()
 		defer func() {
-			if recover() != nil {
+			if recovered := recover(); recovered != nil {
+				if recovered == http.ErrAbortHandler {
+					panic(recovered)
+				}
 				fail(wrapped, r, 500, "internal_error")
 			}
 			status := wrapped.Status()

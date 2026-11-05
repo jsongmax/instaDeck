@@ -64,6 +64,20 @@ const ERROR_CODE_MAP: Record<string, string> = {
   machine_not_visible: '找不到该机器或当前账号不可见',
   invalid_body: '提交的参数无效',
   request_conflict: '已有相同或冲突的操作正在进行',
+  file_path_invalid: '文件路径格式无效',
+  file_name_invalid: '文件或文件夹名称无效',
+  file_protected_path: '这个路径受保护，不能删除',
+  file_not_found: '找不到这个文件或文件夹',
+  file_exists: '已有同名文件或文件夹',
+  file_not_a_file: '目标是文件夹或特殊文件，不是普通文件',
+  file_permission_denied: '机器内权限不足，无法执行这个操作',
+  file_no_space: '机器磁盘空间不足',
+  file_too_large: '文件超过大小限制',
+  file_upload_invalid: '上传参数或分片信息无效',
+  file_upload_incomplete: '上传的分片不完整或校验失败，请重新上传',
+  file_target_invalid: '目标不是普通文件，无法写入',
+  file_operation_failed: '文件操作执行失败',
+  file_operation_timeout: '文件操作超时，请稍后重试',
   machine_name_taken: '这个组织里已有同名机器，请换一个名称',
   credential_unavailable: '账号凭据不可用或 Key 已失效',
   operation_rejected: '操作被上游拒绝',
@@ -139,7 +153,7 @@ export function getMachineStateMeta(state: string): StateMeta {
 }
 
 const AUDIT_TYPE_MAP: Record<string, string> = {
- 'machine.rename': '重命名机器', 'port.publish': '发布、修改或轮换端口', 'port.delete': '删除端口',
+ 'file.download': '下载文件', 'file.upload': '上传文件', 'file.mkdir': '新建文件夹', 'file.rename': '重命名文件', 'file.delete': '删除文件', 'machine.rename': '重命名机器', 'port.publish': '发布、修改或轮换端口', 'port.delete': '删除端口',
  'snapshot.create': '保存快照', 'snapshot.delete': '删除快照',
  'notification.change': '修改通知渠道', 'notification.test': '测试通知',
 
