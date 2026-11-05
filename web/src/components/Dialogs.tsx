@@ -536,7 +536,10 @@ function CreateMachineForm({
           >
             {!activeTemplateId && creatableTemplates.length > 0 ? <option value="">暂无可用模板</option> : null}
             {creatableTemplates.length > 0 ? (
-              creatableTemplates.map((t) => (
+              [
+                ...allowedTemplates,
+                ...creatableTemplates.filter((t) => t.planAllowed === false),
+              ].map((t) => (
                 <option key={t.id} value={t.id} disabled={t.planAllowed === false}>
                   {t.id}{t.planAllowed === false ? '（当前套餐不可用）' : ''}
                 </option>

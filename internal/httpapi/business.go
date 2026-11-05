@@ -283,8 +283,9 @@ func (api *API) templates(w http.ResponseWriter, r *http.Request) {
 		Default     bool                 `json:"default"`
 		DefaultSpec instabox.MachineSpec `json:"defaultSpec"`
 	}
-	values := make([]templateDTO, 0, len(value.Templates))
-	for _, template := range value.Templates {
+	unique := latestTemplates(value.Templates)
+	values := make([]templateDTO, 0, len(unique))
+	for _, template := range unique {
 		values = append(values, templateDTO{PlanAllowed: templatePlanAllowed(me.Org.Tier, template.ID), ID: template.ID, Version: template.Version, Arch: template.Arch, Creatable: template.Creatable, Default: template.Default, DefaultSpec: template.DefaultSpec})
 	}
 	writeJSON(w, 200, map[string]any{"templates": values})
@@ -392,6 +393,27 @@ func (api *API) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, publicAction(value))
+}
+
+// latestTemplates keeps one entry per template. Upstream lists every version, and a create
+// naming only the id gets the one marked latest, or on older servers the last listed.
+func latestTemplates(all []instabox.Template) []instabox.Template {
+	position := make(map[string]int, len(all))
+	unique := make([]instabox.Template, 0, len(all))
+	for _, template := range all {
+		index, seen := position[template.ID]
+		if !seen {
+			position[template.ID] = len(unique)
+			unique = append(unique, template)
+			continue
+		}
+		isDefault := template.Default || unique[index].Default
+		if template.Latest || !unique[index].Latest {
+			unique[index] = template
+		}
+		unique[index].Default = isDefault
+	}
+	return unique
 }
 
 // Free-plan template restrictions: https://api.instabox.sh/v1/openapi.json (POST /v1/machines).

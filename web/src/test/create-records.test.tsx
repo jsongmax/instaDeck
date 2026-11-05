@@ -147,3 +147,14 @@ it('storage failures never prevent state changes', () => {
   useAppStore.getState().removeCreateRecord('action')
   useAppStore.getState().setSession(null)
 })
+it('lists usable templates before the ones the plan refuses', async () => {
+  useAppStore.getState().setSession(session)
+  vi.spyOn(api, 'getTemplates').mockResolvedValue({ templates: [
+    { id: 'ubuntu', creatable: true, planAllowed: false, version: '', arch: '', defaultSpec: {} },
+    { id: 'ci', creatable: true, planAllowed: true, version: '', arch: '', defaultSpec: {} },
+  ] })
+  show(<CreateMachineDialog open accounts={[account]} onClose={() => {}} />)
+  await screen.findByRole('option', { name: 'ci' })
+  const names = (screen.getByLabelText('模板') as HTMLSelectElement).options
+  expect([...names].map((o) => o.value)).toEqual(['ci', 'ubuntu'])
+})
