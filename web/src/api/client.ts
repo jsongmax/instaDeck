@@ -227,6 +227,15 @@ export const api = {
       body: params,
     }),
 
+  renameMachine: (
+    machineId: string,
+    params: { clientRequestId: string; credentialId: string; name: string },
+  ) =>
+    apiRequest<{ id: string; name: string }>(`/machines/${encodeURIComponent(machineId)}`, {
+      method: 'PATCH',
+      body: params,
+    }),
+
   runMachineAction: (
     machineId: string,
     params: {

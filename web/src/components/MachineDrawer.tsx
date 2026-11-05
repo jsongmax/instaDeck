@@ -11,7 +11,7 @@ import {
 import type { ActionKind, FleetMachine } from '../api/types'
 import type { EnrichedAccount } from '../hooks/useFleetData'
 import { useAppStore } from '../store/useAppStore'
-import { DeleteMachineDialog } from './Dialogs'
+import { DeleteMachineDialog, RenameMachineDialog } from './Dialogs'
 import { PortsPanel } from './PortsPanel'
 import { SaveSnapshot } from './SnapshotsPage'
 import { MachineStateBadge, Swatch } from './Icons'
@@ -36,6 +36,7 @@ export function MachineDrawer({
   const machine = machines.find((m) => m.id === selectedMachineId) ?? null
   const [selectedCredByMachine, setSelectedCredByMachine] = useState<Record<string, string>>({})
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null)
 
   const preferredCredId = machine ? selectPreferredSource(machine)?.credentialId ?? '' : ''
   const customCredId = machine ? selectedCredByMachine[machine.id] : undefined
@@ -247,6 +248,15 @@ export function MachineDrawer({
                   启动
                 </button>
               ) : null}
+              {/* Upstream allows a rename in any state, also while an operation runs. */}
+              <button
+                type="button"
+                className="btn"
+                disabled={isAccountInvalid || activeAccount?.capabilities.write === 'denied'}
+                onClick={() => setRenameTargetId(machine.id)}
+              >
+                重命名
+              </button>
               <button
                 type="button"
                 className="btn danger"
@@ -270,6 +280,14 @@ export function MachineDrawer({
           ) : null}
         </div>
       </aside>
+
+      <RenameMachineDialog
+        open={renameTargetId === machine.id}
+        machineId={machine.id}
+        machineName={machine.name}
+        credentialId={activeCredId}
+        onClose={() => setRenameTargetId(null)}
+      />
 
       <DeleteMachineDialog
         open={deleteDialogOpen}

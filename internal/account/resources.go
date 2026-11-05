@@ -9,6 +9,7 @@ type ResourceClient interface {
 	ListPorts(context.Context, string) (instabox.PublicPortList, error)
 	PublishPort(context.Context, string, instabox.PublishPortRequest) (instabox.PublicPort, error)
 	DeletePort(context.Context, string, int) error
+	RenameMachine(context.Context, string, string, string) (instabox.Machine, error)
 	ListSnapshots(context.Context) (instabox.SnapshotList, error)
 	CreateSnapshot(context.Context, string, instabox.CreateSnapshotRequest, string) (instabox.Snapshot, error)
 	DeleteSnapshot(context.Context, string, string) error

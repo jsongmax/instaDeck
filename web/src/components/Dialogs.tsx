@@ -727,6 +727,109 @@ export function DeleteMachineDialog({
   )
 }
 
+function RenameMachineForm({
+  machineId,
+  machineName,
+  credentialId,
+  onClose,
+}: {
+  machineId: string
+  machineName: string
+  credentialId: string
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const showToast = useAppStore((s) => s.showToast)
+  const [name, setName] = useState(machineName)
+  const [submitting, setSubmitting] = useState(false)
+  const [errMsg, setErrMsg] = useState('')
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting || name === machineName) return
+    setSubmitting(true)
+    setErrMsg('')
+    try {
+      const value = await api.renameMachine(machineId, {
+        clientRequestId: crypto.randomUUID(),
+        credentialId,
+        name,
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['fleet'] }),
+        queryClient.invalidateQueries({ queryKey: ['machineDetail', machineId] }),
+      ])
+      showToast(`已重命名为 ${value.name}`)
+      onClose()
+    } catch (err) {
+      setErrMsg(err instanceof ApiError ? err.message : '重命名失败，请重试')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={(e) => void submit(e)} style={{ display: 'contents' }}>
+      <h2>重命名机器</h2>
+      <label className="lbl" htmlFor="rename-machine">
+        新名称
+        <input
+          className="field wide mono"
+          id="rename-machine"
+          autoComplete="off"
+          required
+          maxLength={63}
+          pattern="[a-z0-9][a-z0-9\-]{0,62}"
+          title="小写字母、数字或连字符，以字母或数字开头"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <p className="muted">
+        小写字母、数字或连字符，以字母或数字开头，最多 63 位。机器 ID、端口网址和 SSH
+        证书都不变；旧名称立即失效，系统主机名在下次启动或恢复时更新。
+      </p>
+      {errMsg ? <div className="errline">{errMsg}</div> : null}
+      <div className="dlg-foot">
+        <button type="button" className="btn" onClick={onClose}>
+          取消
+        </button>
+        <button className="btn primary" disabled={submitting || name === machineName}>
+          保存
+        </button>
+      </div>
+    </form>
+  )
+}
+
+export function RenameMachineDialog({
+  open,
+  machineId,
+  machineName,
+  credentialId,
+  onClose,
+}: {
+  open: boolean
+  machineId: string
+  machineName: string
+  credentialId: string
+  onClose: () => void
+}) {
+  return (
+    <ModalDialog open={open} onClose={onClose}>
+      {open ? (
+        <RenameMachineForm
+          key={machineId}
+          machineId={machineId}
+          machineName={machineName}
+          credentialId={credentialId}
+          onClose={onClose}
+        />
+      ) : null}
+    </ModalDialog>
+  )
+}
+
 export function SkinCardsGrid() {
   const skin = useAppStore((s) => s.skin)
   const setSkin = useAppStore((s) => s.setSkin)

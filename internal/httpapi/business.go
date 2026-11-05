@@ -37,6 +37,7 @@ func (api *API) registerBusiness(router chi.Router) {
 	router.Post("/accounts/{id}/validate", api.validateAccount)
 	router.Get("/fleet", api.getFleet)
 	router.Get("/machines/{id}", api.machine)
+	router.Patch("/machines/{id}", api.renameMachine)
 	router.Get("/templates", api.templates)
 	router.Get("/audit-events", api.auditEvents)
 	router.Get("/audit-events/export", api.exportAuditEvents)

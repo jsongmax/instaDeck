@@ -89,6 +89,16 @@ func (c *Client) DeletePort(ctx context.Context, id string, port int) error {
 	}
 	return c.sendRequest(ctx, "DELETE", p+"/ports/"+strconv.Itoa(port), nil, nil, "", "", anySuccess, false, nil)
 }
+
+// RenameMachine changes only the name. The ID, port URLs and certificates stay the same.
+func (c *Client) RenameMachine(ctx context.Context, id, name, key string) (v Machine, err error) {
+	p, e := resourcePath("machines", id)
+	if e != nil {
+		return v, e
+	}
+	err = c.request(ctx, "PATCH", p, nil, map[string]string{"name": name}, key, "", 200, false, &v)
+	return
+}
 func (c *Client) ListSnapshots(ctx context.Context) (v SnapshotList, err error) {
 	err = c.request(ctx, "GET", "/v1/snapshots", nil, nil, "", "", 200, false, &v)
 	return

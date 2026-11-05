@@ -64,6 +64,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
   machine_not_visible: '找不到该机器或当前账号不可见',
   invalid_body: '提交的参数无效',
   request_conflict: '已有相同或冲突的操作正在进行',
+  machine_name_taken: '这个组织里已有同名机器，请换一个名称',
   credential_unavailable: '账号凭据不可用或 Key 已失效',
   operation_rejected: '操作被上游拒绝',
   terminal_rejected: '无法打开终端，请求被拒绝',
@@ -138,7 +139,7 @@ export function getMachineStateMeta(state: string): StateMeta {
 }
 
 const AUDIT_TYPE_MAP: Record<string, string> = {
- 'port.publish': '发布或轮换端口', 'port.delete': '删除端口',
+ 'machine.rename': '重命名机器', 'port.publish': '发布、修改或轮换端口', 'port.delete': '删除端口',
  'snapshot.create': '保存快照', 'snapshot.delete': '删除快照',
  'notification.change': '修改通知渠道', 'notification.test': '测试通知',
 

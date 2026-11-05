@@ -3,7 +3,8 @@ import {render,screen,waitFor,within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {http,HttpResponse} from 'msw'
 import {setupServer} from 'msw/node'
-import {afterAll,afterEach,beforeAll,expect,it} from 'vitest'
+import {afterAll,afterEach,beforeAll,expect,it,vi} from 'vitest'
+import {RenameMachineDialog} from '../components/Dialogs'
 import type {ReactNode} from 'react'
 import {PortsPanel} from '../components/PortsPanel'
 import {SnapshotsPage} from '../components/SnapshotsPage'
@@ -34,3 +35,35 @@ it('私有端口轮换仅提交发布字段，TCP 地址显示为文本',async()
 it('pending 快照自动刷新直到完成',async()=>{let calls=0;server.use(http.get('/api/v1/snapshots',()=>{calls++;return HttpResponse.json({snapshots:[{id:'sn',name:'polling',credentialId:'a',accountName:'主账号',status:calls===1?'pending':'ready',rootSizeBytes:0,dataSizeBytes:0}],errors:[]})}));show(<SnapshotsPage accounts={[account]}/>);expect(await screen.findByText('进行中')).toBeInTheDocument();await waitFor(()=>expect(screen.getByText('可用')).toBeInTheDocument(),{timeout:6500});expect(calls).toBe(2)},8000)
 
 it('操作结果显示操作类型和翻译后的失败原因',async()=>{server.use(http.get('/api/v1/audit-events',()=>HttpResponse.json({events:[{Cursor:'1',operationKind:'create',Event:{Time:new Date().toISOString(),Type:'operation.result',Result:'failure',detail:'no_capacity'}}]})));show(<ActivityPage accountMap={new Map()} machines={[]}/>);expect(await screen.findByText('创建机器')).toBeInTheDocument();expect(screen.getByText('该区域暂无可用容量')).toBeInTheDocument()})
+
+it('编辑端口保留端口号和协议，改为私有时显示一次令牌',async()=>{
+ const user=userEvent.setup();const bodies:Record<string,unknown>[]=[]
+ server.use(http.get('/api/v1/machines/m/ports',()=>HttpResponse.json({enabled:true,ports:[{port:3000,name:'old',protocol:'http',access:'public',url:'https://port.test'}]})),http.post('/api/v1/machines/m/ports',async({request})=>{const body=await request.json() as Record<string,unknown>;bodies.push(body);return HttpResponse.json({port:3000,name:body.name,protocol:'http',access:body.access,url:'https://port.test',...(body.access==='private'?{token:'ibp_once',tokenUrl:'https://port.test/?_token=ibp_once'}:{})})}))
+ show(<PortsPanel machineId="m" credentialId="a"/>)
+ await user.click(await screen.findByRole('button',{name:'编辑'}))
+ expect(screen.getByLabelText('端口号')).toBeDisabled()
+ expect(screen.getByLabelText('协议')).toBeDisabled()
+ expect(screen.getByText('保存')).toBeDisabled()
+ const name=screen.getByLabelText('名称')
+ await user.clear(name);await user.type(name,'web')
+ await user.selectOptions(screen.getByLabelText('访问方式'),'private')
+ await user.click(screen.getByText('保存'))
+ await waitFor(()=>expect(bodies[0]).toMatchObject({credentialId:'a',port:3000,name:'web',access:'private',protocol:'http'}))
+ expect(await screen.findByText('ibp_once')).toBeInTheDocument()
+})
+it('重命名提交新名称并刷新机器列表，同名时显示原因',async()=>{
+ const user=userEvent.setup();const names:string[]=[];let closed=false
+ server.use(http.patch('/api/v1/machines/m',async({request})=>{const body=await request.json() as {name:string;credentialId:string};names.push(body.name);if(body.name==='taken')return HttpResponse.json({error:{code:'machine_name_taken',message:'这个组织里已有同名机器，请换一个名称',requestId:'r',retryable:false}},{status:400});return HttpResponse.json({id:'m',name:body.name})}))
+ const {client}=show(<RenameMachineDialog open machineId="m" machineName="old" credentialId="a" onClose={()=>{closed=true}}/>)
+ const invalidate=vi.spyOn(client,'invalidateQueries')
+ const save=screen.getByText('保存')
+ expect(save).toBeDisabled()
+ const input=screen.getByLabelText('新名称')
+ await user.clear(input);await user.type(input,'taken');await user.click(save)
+ expect(await screen.findByText(/已有同名机器/)).toBeInTheDocument()
+ expect(closed).toBe(false)
+ await user.clear(input);await user.type(input,'new-name');await user.click(save)
+ await waitFor(()=>expect(closed).toBe(true))
+ expect(names).toEqual(['taken','new-name'])
+ expect(invalidate).toHaveBeenCalledWith({queryKey:['fleet']})
+})

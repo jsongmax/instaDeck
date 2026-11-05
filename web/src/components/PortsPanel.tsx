@@ -26,6 +26,7 @@ function SafeURL({ value }: { value: string }) {
 export function PortsPanel({ machineId, credentialId }: { machineId: string; credentialId: string }) {
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<PublicPort | null>(null)
   const [once, setOnce] = useState<PublicPort | null>(null)
   const [remove, setRemove] = useState<PublicPort | null>(null)
   const [error, setError] = useState('')
@@ -43,6 +44,7 @@ export function PortsPanel({ machineId, credentialId }: { machineId: string; cre
   const close = () => {
     generation.current++
     setOpen(false)
+    setEditing(null)
     setOnce(null)
     setError('')
   }
@@ -104,6 +106,7 @@ export function PortsPanel({ machineId, credentialId }: { machineId: string; cre
                 {port.access === 'private' && (
                   <button className="btn" disabled={busy} onClick={() => void publish({ ...port, rotateToken: true })}>更换令牌</button>
                 )}
+                <button className="btn" onClick={() => { setEditing(port); setOpen(true); setError('') }}>编辑</button>
                 <button className="btn danger" onClick={() => { setRemove(port); setError('') }}>删除端口</button>
               </div>
             </div>
@@ -113,7 +116,7 @@ export function PortsPanel({ machineId, credentialId }: { machineId: string; cre
       {query.error && <p className="errline">{errorText(query.error)}</p>}
       {error && !open && !remove && <p className="errline">{error}</p>}
       <ModalDialog open={open} onClose={close}>
-        {once ? (
+        {!open ? null : once ? (
           <>
             <h2>请现在复制令牌</h2>
             <p className="notice warn">令牌只显示一次，关闭后无法再次查看。</p>
@@ -122,7 +125,7 @@ export function PortsPanel({ machineId, credentialId }: { machineId: string; cre
             <SafeURL value={once.tokenUrl ?? ''} />
             <button className="btn" onClick={close}>关闭</button>
           </>
-        ) : <PortForm busy={busy} onSubmit={publish} onClose={close} />}
+        ) : <PortForm key={editing?.port ?? 'new'} editing={editing} busy={busy} onSubmit={publish} onClose={close} />}
         {error && <p className="errline">{error}</p>}
       </ModalDialog>
       <ModalDialog open={!!remove} onClose={() => setRemove(null)}>
@@ -138,24 +141,26 @@ export function PortsPanel({ machineId, credentialId }: { machineId: string; cre
   )
 }
 
-function PortForm({ busy, onSubmit, onClose }: {
-  busy: boolean; onSubmit: (port: PortInput) => Promise<void>; onClose: () => void
+function PortForm({ editing, busy, onSubmit, onClose }: {
+  editing: PublicPort | null; busy: boolean; onSubmit: (port: PortInput) => Promise<void>; onClose: () => void
 }) {
-  const [port, setPort] = useState(3000)
-  const [name, setName] = useState('')
-  const [access, setAccess] = useState<'private' | 'public'>('private')
-  const [protocol, setProtocol] = useState<'http' | 'tcp'>('http')
+  const [port, setPort] = useState(editing?.port ?? 3000)
+  const [name, setName] = useState(editing?.name ?? '')
+  const [access, setAccess] = useState<'private' | 'public'>(editing?.access ?? 'private')
+  const [protocol, setProtocol] = useState<'http' | 'tcp'>(editing?.protocol ?? 'http')
+  const accessChanged = Boolean(editing && editing.access !== access)
+  const unchanged = Boolean(editing && editing.name === name && !accessChanged)
   return (
     <form style={{ display: 'contents' }} onSubmit={event => { event.preventDefault(); void onSubmit({ port, name, access, protocol }) }}>
-      <h2>发布端口</h2>
+      <h2>{editing ? `编辑端口 ${editing.port}` : '发布端口'}</h2>
       <label className="lbl">端口号
-        <input className="field" type="number" min={1024} max={65535} value={port} onChange={event => setPort(Number(event.target.value))} />
+        <input className="field" type="number" min={1024} max={65535} disabled={Boolean(editing)} value={port} onChange={event => setPort(Number(event.target.value))} />
       </label>
       <label className="lbl">名称
-        <input className="field" maxLength={100} value={name} onChange={event => setName(event.target.value)} />
+        <input className="field" maxLength={100} required={Boolean(editing)} value={name} onChange={event => setName(event.target.value)} />
       </label>
       <label className="lbl">协议
-        <select className="field" value={protocol} onChange={event => {
+        <select className="field" disabled={Boolean(editing)} value={protocol} onChange={event => {
           setProtocol(event.target.value as 'http' | 'tcp')
           if (event.target.value === 'tcp') setAccess('public')
         }}>
@@ -168,9 +173,10 @@ function PortForm({ busy, onSubmit, onClose }: {
         </select>
       </label>
       {access === 'public' && <p className="notice warn" role="alert">任何拿到这个网址的人都能访问这个端口上的服务</p>}
+      {accessChanged && <p className="notice warn">修改访问方式会断开这个端口当前的连接，网址不变。{access === 'private' ? '保存后会生成新令牌，只显示一次。' : ''}</p>}
       <div className="dlg-foot">
         <button type="button" className="btn" onClick={onClose}>取消</button>
-        <button className="btn primary" disabled={busy}>发布</button>
+        <button className="btn primary" disabled={busy || unchanged}>{editing ? '保存' : '发布'}</button>
       </div>
     </form>
   )

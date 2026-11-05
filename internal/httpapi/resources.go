@@ -132,6 +132,76 @@ func (api *API) ports(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
+func renameCode(err error) string {
+	var upstream *instabox.APIError
+	if errors.As(err, &upstream) {
+		switch {
+		case upstream.Code == "operation_conflict":
+			return "machine_name_taken"
+		case upstream.StatusCode == 409:
+			return "request_conflict"
+		case upstream.StatusCode == 400:
+			return "invalid_request"
+		case upstream.StatusCode == 404:
+			return "not_found"
+		}
+	}
+	return account.FilterError(err).Code
+}
+
+// renameMachine is reversible and keeps the ID, so like start and stop it needs no
+// reauthentication.
+func (api *API) renameMachine(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		CredentialID    string `json:"credentialId"`
+		ClientRequestID string `json:"clientRequestId"`
+		Name            string `json:"name"`
+	}
+	if !decode(w, r, &input, 4096) {
+		return
+	}
+	if input.ClientRequestID == "" || len(input.ClientRequestID) > 128 || !snapshotName.MatchString(input.Name) {
+		fail(w, r, 400, "invalid_request")
+		return
+	}
+	machine := chi.URLParam(r, "id")
+	metadata, _, err := api.visibleMachine(r, input.CredentialID)
+	if err != nil {
+		fail(w, r, 404, "machine_not_visible")
+		return
+	}
+	if !api.requireAudit(w, r, "machine.rename", input.CredentialID, machine) {
+		return
+	}
+	var value instabox.Machine
+	err = api.dependencies.Accounts.WithResources(r.Context(), input.CredentialID, func(a account.DTO, c account.ResourceClient) error {
+		if a.Capabilities.Write == account.Denied {
+			return &account.Failure{Code: "capability_denied"}
+		}
+		var e error
+		value, e = c.RenameMachine(r.Context(), machine, input.Name, resourceKey(input.CredentialID, input.ClientRequestID))
+		return e
+	})
+	if err != nil {
+		code := renameCode(err)
+		_ = api.eventDetail(r, "machine.rename", "failure", input.CredentialID, machine, code)
+		fail(w, r, 400, code)
+		return
+	}
+	_ = api.eventDetail(r, "machine.rename", "success", input.CredentialID, machine, "")
+	// Other keys of this organization see the same machine; a stale copy would show
+	// up as a state conflict between accounts.
+	if accounts, e := api.dependencies.Accounts.List(r.Context()); e == nil {
+		for _, a := range accounts {
+			if a.OrgID == metadata.OrgID {
+				api.dependencies.Fleet.Invalidate(a.CredentialID)
+			}
+		}
+	}
+	api.dependencies.Fleet.Invalidate(input.CredentialID)
+	writeJSON(w, 200, map[string]string{"id": machine, "name": value.Name})
+}
+
 type snapshotDTO struct {
 	instabox.Snapshot
 	CredentialID string `json:"credentialId"`

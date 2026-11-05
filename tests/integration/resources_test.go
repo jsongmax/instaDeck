@@ -260,3 +260,59 @@ func TestPortPermissionDoesNotDenySnapshotScope(t *testing.T) {
 		t.Fatal("machine scope blocked image scope", r.Code, r.Body)
 	}
 }
+
+func TestRenameMachine(t *testing.T) {
+	f := newFixture(t, false)
+	cookie, csrf := f.login(t)
+	a := f.addAccount(t, cookie, csrf)
+	origin := f.dependencies.Config.Origin
+	var writes atomic.Int32
+	var key, sent string
+	f.resource = func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method != "PATCH" || r.URL.Path != "/v1/machines/machine" {
+			return false
+		}
+		writes.Add(1)
+		key = r.Header.Get("Idempotency-Key")
+		var input map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&input)
+		if len(input) != 1 {
+			t.Errorf("only the name may be sent: %v", input)
+		}
+		sent, _ = input["name"].(string)
+		if sent == "taken" {
+			respond(w, 409, map[string]any{"error": map[string]any{"code": "operation_conflict"}})
+			return true
+		}
+		respond(w, 200, instabox.Machine{ID: "machine", OrgID: "org", Name: sent})
+		return true
+	}
+	body := func(credential, name string) string {
+		return fmt.Sprintf(`{"credentialId":%q,"clientRequestId":"rename-1","name":%q}`, credential, name)
+	}
+	const path = "/api/v1/machines/machine"
+	for _, name := range []string{"", "Upper", "-leading", "has space", strings.Repeat("a", 64)} {
+		if r := f.request("PATCH", path, body(a.CredentialID, name), cookie, csrf, origin); r.Code != 400 {
+			t.Errorf("name %q: %d", name, r.Code)
+		}
+	}
+	if r := f.request("PATCH", path, body("unknown", "new-name"), cookie, csrf, origin); r.Code != 404 {
+		t.Errorf("unknown credential: %d", r.Code)
+	}
+	if r := f.request("PATCH", path, body(a.CredentialID, "new-name"), cookie, "", origin); r.Code != 403 {
+		t.Errorf("missing csrf: %d", r.Code)
+	}
+	if writes.Load() != 0 {
+		t.Fatalf("rejected requests reached upstream: %d", writes.Load())
+	}
+	r := f.request("PATCH", path, body(a.CredentialID, "new-name"), cookie, csrf, origin)
+	if r.Code != 200 || !strings.Contains(r.Body.String(), "new-name") || sent != "new-name" || key == "" {
+		t.Fatalf("rename: %d %s sent=%q key=%q", r.Code, r.Body, sent, key)
+	}
+	if r = f.request("PATCH", path, body(a.CredentialID, "taken"), cookie, csrf, origin); r.Code != 400 || !strings.Contains(r.Body.String(), "machine_name_taken") {
+		t.Fatalf("taken: %d %s", r.Code, r.Body)
+	}
+	if r = f.request("GET", "/api/v1/audit-events?type=machine.rename&result=failure", "", cookie, "", ""); r.Code != 200 || !strings.Contains(r.Body.String(), "machine_name_taken") {
+		t.Fatalf("audit: %d %s", r.Code, r.Body)
+	}
+}
