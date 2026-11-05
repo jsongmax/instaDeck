@@ -109,6 +109,7 @@ type Options struct {
 type ticketEntry struct {
 	binding Binding
 	expires time.Time
+	desktop bool
 }
 type activeSession struct {
 	binding Binding
@@ -225,6 +226,14 @@ func (manager *Manager) prune() {
 
 // IssueTicket creates a short-lived, single-use ticket bound to trusted identity.
 func (manager *Manager) IssueTicket(binding Binding) (Ticket, error) {
+	return manager.issueTicket(binding, false)
+}
+
+func (manager *Manager) IssueDesktopTicket(binding Binding) (Ticket, error) {
+	return manager.issueTicket(binding, true)
+}
+
+func (manager *Manager) issueTicket(binding Binding, desktop bool) (Ticket, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	manager.prune()
@@ -242,7 +251,11 @@ func (manager *Manager) IssueTicket(binding Binding) (Ticket, error) {
 		return "", Unavailable
 	}
 	ticket := Ticket(base64.RawURLEncoding.EncodeToString(random[:]))
-	manager.tickets[sha256.Sum256([]byte(ticket))] = ticketEntry{binding: binding, expires: manager.options.Now().Add(manager.options.TicketTTL)}
+	ttl := manager.options.TicketTTL
+	if desktop {
+		ttl = 30 * time.Second
+	}
+	manager.tickets[sha256.Sum256([]byte(ticket))] = ticketEntry{binding: binding, expires: manager.options.Now().Add(ttl), desktop: desktop}
 	return ticket, nil
 }
 
@@ -253,13 +266,17 @@ func (manager *Manager) consume(ticket Ticket, sessionHash [32]byte) (Binding, e
 }
 
 func (manager *Manager) consumeLocked(ticket Ticket, sessionHash [32]byte) (Binding, error) {
+	return manager.consumePurposeLocked(ticket, sessionHash, false)
+}
+
+func (manager *Manager) consumePurposeLocked(ticket Ticket, sessionHash [32]byte, desktop bool) (Binding, error) {
 	hash := sha256.Sum256([]byte(ticket))
 	entry, found := manager.tickets[hash]
 	delete(manager.tickets, hash)
 	if manager.closed {
 		return Binding{}, Closed
 	}
-	if !found || entry.binding.SessionHash != sessionHash || !manager.options.Now().Before(entry.expires) {
+	if !found || entry.desktop != desktop || entry.binding.SessionHash != sessionHash || !manager.options.Now().Before(entry.expires) {
 		return Binding{}, InvalidTicket
 	}
 	return entry.binding, nil

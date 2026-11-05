@@ -78,6 +78,8 @@ const ERROR_CODE_MAP: Record<string, string> = {
   file_target_invalid: '目标不是普通文件，无法写入',
   file_operation_failed: '文件操作执行失败',
   file_operation_timeout: '文件操作超时，请稍后重试',
+  desktop_not_running: '远程桌面尚未运行，请先启动桌面',
+  desktop_unavailable: '远程桌面服务暂不可用，请稍后重试',
   machine_name_taken: '这个组织里已有同名机器，请换一个名称',
   credential_unavailable: '账号凭据不可用或 Key 已失效',
   operation_rejected: '操作被上游拒绝',
@@ -153,7 +155,7 @@ export function getMachineStateMeta(state: string): StateMeta {
 }
 
 const AUDIT_TYPE_MAP: Record<string, string> = {
- 'file.download': '下载文件', 'file.upload': '上传文件', 'file.mkdir': '新建文件夹', 'file.rename': '重命名文件', 'file.delete': '删除文件', 'machine.rename': '重命名机器', 'port.publish': '发布、修改或轮换端口', 'port.delete': '删除端口',
+ 'file.download': '下载文件', 'file.upload': '上传文件', 'file.mkdir': '新建文件夹', 'file.rename': '重命名文件', 'file.delete': '删除文件', 'desktop.install': '安装远程桌面', 'desktop.start': '启动远程桌面', 'desktop.open': '打开远程桌面', 'machine.rename': '重命名机器', 'port.publish': '发布、修改或轮换端口', 'port.delete': '删除端口',
  'snapshot.create': '保存快照', 'snapshot.delete': '删除快照',
  'notification.change': '修改通知渠道', 'notification.test': '测试通知',
 

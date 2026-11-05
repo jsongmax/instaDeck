@@ -148,6 +148,8 @@ function WorkspaceShell() {
   // Global keyboard shortcuts & pointer effects (button ripple & stat tile spotlight)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Inside the remote desktop this key belongs to the remote machine.
+      if (document.activeElement?.closest('.desktop-window')) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen(true)

@@ -311,6 +311,7 @@ label.lbl .field { color: var(--ink); font-size: 14px; font-weight: 500; }
 .dock .btn { flex: none; animation: rise .25s var(--ease) both; }
 
 /* 浮动窗口 */
+#wins { position: relative; z-index: 10; }
 .win { position: fixed; display: flex; flex-direction: column; background: var(--term-bg); color: var(--term-ink); border: 1px solid color-mix(in srgb, var(--c) 42%, var(--term-border)); border-radius: 12px; box-shadow: var(--shadow-lg), 0 0 34px color-mix(in srgb, var(--c) 18%, transparent); min-width: 340px; min-height: 180px; overflow: hidden; }
 .win-new { animation: winIn .28s var(--ease) both; }
 .win-out { animation: winOut .15s ease-in both; }
@@ -457,4 +458,26 @@ dialog.wide-dlg:has(.files-dlg) { width: min(1040px, calc(100vw - 32px)); }
 @media (max-width: 760px) {
   .files-table td:nth-child(3), .files-table th:nth-child(3), .files-table td:nth-child(4), .files-table th:nth-child(4) { display: none; }
   .files-table .btn-row { flex-wrap: wrap; }
+}
+
+/* 远程桌面 */
+.desktop-content { flex: 1; min-height: 0; padding: 10px; color: var(--ink); background: var(--panel-solid); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.desktop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.desktop-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.desktop-title h2 { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.desktop-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+.desktop-badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 36%, transparent); }
+.desktop-badge.busy { color: var(--busy); border-color: color-mix(in srgb, var(--busy) 36%, transparent); }
+.desktop-badge.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 36%, transparent); background: var(--bad-soft); }
+.desktop-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.desktop-stage { position: relative; width: 100%; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #000; display: flex; flex-direction: column; }
+.desktop-window:fullscreen { width: 100% !important; height: 100% !important; inset: 0 !important; border-radius: 0; }
+.desktop-window:fullscreen .desktop-stage { flex: 1; height: auto; min-height: 0; }
+.desktop-screen { flex: 1; width: 100%; height: 100%; min-height: 0; overflow: hidden; background: #000; outline: none; display: flex; align-items: center; justify-content: center; }
+.desktop-overlay { position: absolute; inset: 0; overflow: auto; display: flex; align-items: safe center; justify-content: center; padding: 16px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(8px); }
+.desktop-card { width: min(420px, 100%); background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.desktop-card h3 { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; }
+.desktop-card p { margin: 0; font-size: 13px; line-height: 1.55; }
+@media (max-width: 760px) {
+  .desktop-toolbar { width: 100%; }
 }

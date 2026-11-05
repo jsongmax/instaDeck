@@ -47,6 +47,7 @@ export function MachineDrawer({
     null,
   )
 
+
   const preferredCredId = machine ? selectPreferredSource(machine)?.credentialId ?? '' : ''
   const customCredId = machine ? selectedCredByMachine[machine.id] : undefined
   const activeCredId =
@@ -271,6 +272,20 @@ export function MachineDrawer({
                 onClick={() => setFilesTarget({ machineId: machine.id, credentialId: activeCredId })}
               >
                 文件
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={
+                  locked ||
+                  machine.state !== 'running' ||
+                  activeAccount?.capabilities.write === 'denied'
+                }
+                onClick={() =>
+                  openTerminal({ kind: 'desktop', machineId: machine.id, machineName: machine.name, credentialId: activeCredId, accountName: activeAccount?.name ?? activeCredId, accountColor: activeAccount?.color ?? 'var(--a1)' })
+                }
+              >
+                桌面
               </button>
               {/* Upstream allows a rename in any state, also while an operation runs. */}
               <button

@@ -3,6 +3,7 @@ import type { ActionKind, ActionRecord, SessionInfo } from '../api/types'
 
 export interface TerminalWindowItem {
   id: string
+  kind: 'terminal' | 'desktop'
   machineId: string
   machineName: string
   credentialId: string
@@ -166,6 +167,7 @@ interface AppState {
   triggerRowFlash: (machineId: string, kind: 'ok' | 'bad') => void
 
   openTerminal: (params: {
+    kind?: 'terminal' | 'desktop'
     machineId: string
     machineName: string
     credentialId: string
@@ -374,10 +376,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }, 1050)
   },
 
-  openTerminal: ({ machineId, machineName, credentialId, accountName, accountColor }) => {
+  openTerminal: ({ kind = 'terminal', machineId, machineName, credentialId, accountName, accountColor }) => {
     const state = get()
     const existing = state.terminals.find(
-      (t) => t.machineId === machineId && t.credentialId === credentialId,
+      (t) => t.kind === kind && t.machineId === machineId && t.credentialId === credentialId,
     )
     if (existing) {
       const nextZ = state.topZ + 1
@@ -396,14 +398,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const seq = state.winSeq + 1
     const nextZ = state.topZ + 1
     const offset = (seq % 6) * 28
-    const w = 560
-    const h = 320
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
     const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+    const w = kind === 'desktop' ? Math.max(340, Math.min(1000, vw - 32)) : 560
+    const h = kind === 'desktop' ? Math.max(180, Math.min(700, vh - 140)) : 320
     const x = Math.max(16, vw - w - 40 - offset)
     const y = Math.max(66, vh - h - 70 - offset)
     const win: TerminalWindowItem = {
       id: `w${seq}`,
+      kind,
       machineId,
       machineName,
       credentialId,

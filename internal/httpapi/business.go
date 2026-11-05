@@ -57,6 +57,9 @@ func (api *API) registerBusiness(router chi.Router) {
 	router.Post("/machines/{id}/actions", api.submit)
 	router.Post("/machines/{id}/terminal-tickets", api.ticket)
 	router.Get("/terminal/ws", api.websocket)
+	router.Post("/machines/{id}/desktop", api.desktop)
+	router.Post("/machines/{id}/desktop/tickets", api.desktopTicket)
+	router.Get("/desktop/ws", api.desktopWebsocket)
 }
 
 func (api *API) accounts(w http.ResponseWriter, r *http.Request) {

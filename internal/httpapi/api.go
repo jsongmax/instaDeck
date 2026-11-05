@@ -235,8 +235,9 @@ func (api *API) boundary(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, requestID))
 		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("Cache-Control", "no-store")
-		// xterm measures and positions terminal cells with inline styles.
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; style-src 'self' 'unsafe-inline'")
+		// xterm measures and positions terminal cells with inline styles. noVNC draws
+		// JPEG frames from a data: URL, so without it real desktops stay blank.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if api.policy.Load().secure {
@@ -257,7 +258,7 @@ func (api *API) boundary(next http.Handler) http.Handler {
 			}
 			api.dependencies.Logger.Info("request", "method", r.Method, "route", chi.RouteContext(r.Context()).RoutePattern(), "status", status, "duration", time.Since(started), "requestId", requestID)
 		}()
-		if api.policy.Load().origin == "" && !strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && (r.Method != "GET" || r.URL.Path == "/api/v1/terminal/ws") {
+		if api.policy.Load().origin == "" && !strings.HasPrefix(r.URL.Path, "/api/v1/setup/") && (r.Method != "GET" || (r.URL.Path == "/api/v1/terminal/ws" || r.URL.Path == "/api/v1/desktop/ws")) {
 			fail(wrapped, r, 403, "origin_rejected")
 			return
 		}
@@ -267,7 +268,7 @@ func (api *API) boundary(next http.Handler) http.Handler {
 
 func (api *API) origin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || r.URL.Path == "/api/v1/terminal/ws" {
+		if r.Method != "GET" || (r.URL.Path == "/api/v1/terminal/ws" || r.URL.Path == "/api/v1/desktop/ws") {
 			if values := r.Header.Values("Origin"); api.policy.Load().origin == "" || len(values) != 1 || values[0] != api.policy.Load().origin {
 				fail(w, r, 403, "origin_rejected")
 				return

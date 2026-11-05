@@ -1,6 +1,9 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { DesktopWindow } from './DesktopWindow'
+import { Icon } from './Icons'
 import { api } from '../api/client'
 import { ApiError, formatErrorCode } from '../api/errors'
 import { type TerminalWindowItem, useAppStore } from '../store/useAppStore'
@@ -15,14 +18,8 @@ type ConnState = 'connecting' | 'connected' | 'disconnected'
 
 function SingleTerminalWindow({ item }: { item: TerminalWindowItem }) {
   const termSize = useAppStore((s) => s.termSize)
-  const focusTerminal = useAppStore((s) => s.focusTerminal)
-  const minimizeTerminal = useAppStore((s) => s.minimizeTerminal)
-  const toggleMaximizeTerminal = useAppStore((s) => s.toggleMaximizeTerminal)
-  const closeTerminal = useAppStore((s) => s.closeTerminal)
-  const updateTerminalGeometry = useAppStore((s) => s.updateTerminalGeometry)
 
   const hostRef = useRef<HTMLDivElement | null>(null)
-  const winRef = useRef<HTMLElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -33,7 +30,6 @@ function SingleTerminalWindow({ item }: { item: TerminalWindowItem }) {
 
   const [connState, setConnState] = useState<ConnState>('connecting')
   const [disconnectReason, setDisconnectReason] = useState<string>('')
-  const [animClass, setAnimClass] = useState<string>(item.fresh ? 'win-new' : '')
 
   useEffect(() => {
     minimizedRef.current = item.minimized
@@ -273,6 +269,38 @@ function SingleTerminalWindow({ item }: { item: TerminalWindowItem }) {
     }
   }, [item.minimized, item.maximized, item.w, item.h, scheduleFitAndResize])
 
+  return (
+    <FloatingWindow item={item} status={<span className={`win-state ${connState}`}>{connState === 'connecting' ? '连接中…' : connState === 'disconnected' ? '已断开' : '已连接'}</span>}>
+      <div className="win-body">
+        <div ref={hostRef} className="xterm-host" />
+      </div>
+      {connState === 'disconnected' ? (
+        <div className="win-disconnect-bar">
+          <span>
+            已断开{disconnectReason ? `：${disconnectReason}` : ''}
+          </span>
+          <button
+            type="button"
+            className="btn"
+            style={{ height: '26px', padding: '0 10px', fontSize: '12px' }}
+            onClick={() => void connectSession(true)}
+          >
+            重连
+          </button>
+        </div>
+      ) : null}
+    </FloatingWindow>
+  )
+}
+
+export function FloatingWindow({ item, children, status }: { item: TerminalWindowItem; children: ReactNode; status?: ReactNode }) {
+  const focusTerminal = useAppStore((s) => s.focusTerminal)
+  const minimizeTerminal = useAppStore((s) => s.minimizeTerminal)
+  const toggleMaximizeTerminal = useAppStore((s) => s.toggleMaximizeTerminal)
+  const closeTerminal = useAppStore((s) => s.closeTerminal)
+  const updateTerminalGeometry = useAppStore((s) => s.updateTerminalGeometry)
+  const winRef = useRef<HTMLElement | null>(null)
+  const [animClass, setAnimClass] = useState<string>(item.fresh ? 'win-new' : '')
   const handleMinimize = () => {
     setAnimClass('win-min')
     setTimeout(() => {
@@ -372,33 +400,19 @@ function SingleTerminalWindow({ item }: { item: TerminalWindowItem }) {
   return (
     <section
       ref={winRef}
-      className={`win ${animClass}`}
+      className={`win ${item.kind === 'desktop' ? 'desktop-window' : ''} ${animClass}`}
       id={item.id}
       style={geoStyle}
       hidden={item.minimized}
-      aria-label={`${item.accountName} ${item.machineName} 终端`}
+      aria-label={`${item.accountName} ${item.machineName} ${item.kind === 'desktop' ? '桌面' : '终端'}`}
       onPointerDown={() => focusTerminal(item.id)}
     >
       <div className="win-bar" onPointerDown={handleBarPointerDown}>
         <span className="swatch" />
         <span className="who">
-          {item.accountName} / {item.machineName}
+          {item.accountName} / {item.machineName} · {item.kind === 'desktop' ? '桌面' : '终端'}
         </span>
-        <span
-          className={`win-state ${
-            connState === 'connecting'
-              ? 'connecting'
-              : connState === 'disconnected'
-                ? 'disconnected'
-                : ''
-          }`}
-        >
-          {connState === 'connecting'
-            ? '连接中…'
-            : connState === 'disconnected'
-              ? '已断开'
-              : '已连接'}
-        </span>
+        {status}
         <span className="spacer" />
         <button
           type="button"
@@ -428,24 +442,7 @@ function SingleTerminalWindow({ item }: { item: TerminalWindowItem }) {
           ×
         </button>
       </div>
-      <div className="win-body">
-        <div ref={hostRef} className="xterm-host" />
-      </div>
-      {connState === 'disconnected' ? (
-        <div className="win-disconnect-bar">
-          <span>
-            已断开{disconnectReason ? `：${disconnectReason}` : ''}
-          </span>
-          <button
-            type="button"
-            className="btn"
-            style={{ height: '26px', padding: '0 10px', fontSize: '12px' }}
-            onClick={() => void connectSession(true)}
-          >
-            重连
-          </button>
-        </div>
-      ) : null}
+      {children}
       {!item.maximized
         ? (['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
             <span
@@ -464,7 +461,7 @@ export function TerminalWindowsLayer() {
   return (
     <div id="wins">
       {terminals.map((t) => (
-        <SingleTerminalWindow key={t.id} item={t} />
+        t.kind === 'desktop' ? <DesktopWindow key={t.id} item={t} /> : <SingleTerminalWindow key={t.id} item={t} />
       ))}
     </div>
   )
@@ -490,7 +487,8 @@ export function TerminalDock() {
               className="swatch"
               style={{ '--c': t.accountColor } as React.CSSProperties}
             />
-            {t.accountName} / {t.machineName}
+            <Icon name={t.kind === 'desktop' ? 'desktop' : 'term'} />
+            {t.accountName} / {t.machineName} · {t.kind === 'desktop' ? '桌面' : '终端'}
             {t.minimized ? <span className="muted">（已最小化）</span> : null}
           </button>
         ))

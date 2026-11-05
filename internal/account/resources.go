@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"github.com/coder/websocket"
 	"instadeck/internal/instabox"
 	"io"
 )
@@ -51,4 +52,32 @@ func (s *Service) WithResources(ctx context.Context, id string, send func(DTO, R
 		_ = s.Observe(ctx, id, record.Version, "", err)
 	}
 	return err
+}
+
+type DesktopClient interface {
+	Desktop(context.Context, string, instabox.DesktopRequest) (instabox.Desktop, error)
+	DialDesktop(context.Context, string) (*websocket.Conn, error)
+}
+
+func (s *Service) DesktopClientForCredential(ctx context.Context, id string, version int) (DTO, DesktopClient, error) {
+	metadata, _, err := s.ConnectionClientForCredential(ctx, id, version)
+	if err != nil {
+		return DTO{}, nil, err
+	}
+	reader, err := s.ClientForCredential(ctx, id)
+	if err != nil {
+		return DTO{}, nil, err
+	}
+	observed := reader.(*observedClient)
+	if observed.version != metadata.Version {
+		return DTO{}, nil, &Failure{Code: "replaced"}
+	}
+	if err = observed.allowed(ctx); err != nil {
+		return DTO{}, nil, err
+	}
+	client, ok := observed.client.(DesktopClient)
+	if !ok {
+		return DTO{}, nil, &Failure{Code: "unavailable"}
+	}
+	return metadata, client, nil
 }

@@ -15,6 +15,7 @@ export type IconName =
   | 'palette'
   | 'snapshot'
   | 'folder'
+  | 'desktop'
   | 'bell'
 
 export function Icon({ name }: { name: IconName }) {
@@ -123,6 +124,29 @@ export function Icon({ name }: { name: IconName }) {
           strokeWidth="1.7"
           strokeLinecap="round"
         />
+      )
+      break
+    case 'desktop':
+      content = (
+        <>
+          <rect
+            x="1.8"
+            y="2.5"
+            width="12.4"
+            height="8.6"
+            rx="1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+          />
+          <path
+            d="M5.5 13.5h5M8 11.1v2.4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+          />
+        </>
       )
       break
     case 'folder':

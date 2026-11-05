@@ -171,12 +171,13 @@ export function MachinesPage({
     }
   }
 
-  const handleOpenTerminal = (machine: FleetMachine) => {
+  const handleOpenTerminal = (machine: FleetMachine, kind: 'terminal' | 'desktop' = 'terminal') => {
     if (machine.state !== 'running') return
     const preferred = selectPreferredSource(machine)
     const credId = filterAccountId ?? preferred?.credentialId ?? ''
     const acct = accountMap.get(credId)
     openTerminal({
+      kind,
       machineId: machine.id,
       machineName: machine.name,
       credentialId: credId,
@@ -529,6 +530,28 @@ export function MachinesPage({
                           <>
                             <button
                               type="button"
+                              className="btn btn-term"
+                              disabled={disabled || acct?.capabilities.write === 'denied'}
+                              aria-label={`打开桌面：${m.name}`}
+                              data-tip={tip('打开桌面')}
+                              onClick={() => handleOpenTerminal(m, 'desktop')}
+                            >
+                              <Icon name="desktop" />
+                              桌面
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-term"
+                              disabled={disabled}
+                              aria-label={`打开终端：${m.name}`}
+                              data-tip={tip('打开终端')}
+                              onClick={() => handleOpenTerminal(m)}
+                            >
+                              <Icon name="term" />
+                              终端
+                            </button>
+                            <button
+                              type="button"
                               className="btn icon-only"
                               disabled={disabled}
                               aria-label={`暂停：${m.name}`}
@@ -546,17 +569,6 @@ export function MachinesPage({
                               onClick={() => void executeAction(m, 'stop')}
                             >
                               <Icon name="stop" />
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-term"
-                              disabled={disabled}
-                              aria-label={`打开终端：${m.name}`}
-                              data-tip={tip('打开终端')}
-                              onClick={() => handleOpenTerminal(m)}
-                            >
-                              <Icon name="term" />
-                              终端
                             </button>
                           </>
                         ) : m.state === 'suspended' ? (
