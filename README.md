@@ -2,10 +2,11 @@
 
 [![CI](https://github.com/jsongmax/instaDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/jsongmax/instaDeck/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jsongmax/instaDeck?include_prereleases)](https://github.com/jsongmax/instaDeck/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 InstaDeck 是一个自托管的管理面板，用来在一个页面里统一管理多个 [InstaBox](https://instabox.sh) 账号的云端 Linux 机器，不用来回切换账号。
 
-本项目是独立的第三方工具，与 InstaBox 官方无关。使用多个账号前，请自行确认符合 InstaBox 的服务条款。
+本项目是独立的第三方工具，与 InstaBox 官方无关。使用前请阅读[免责声明](#免责声明)。
 
 > **项目处于早期阶段。** 机器管理已用真实账号在本地验证；其他功能的验证情况见[当前状态](#当前状态)。
 
@@ -22,7 +23,8 @@ InstaDeck 是一个自托管的管理面板，用来在一个页面里统一管�
 - [当前状态](#当前状态)
 - [开发](#开发)
 - [发布新版本](#发布新版本)
-- [许可证](#许可证)
+- [免责声明](#免责声明)
+- [开源协议](#开源协议)
 
 ## 功能
 
@@ -285,6 +287,14 @@ bash scripts/build-release.sh v1.0.0
 
 Windows 不记录文件的执行权限，在 Windows 上打出的 Linux 和 macOS 压缩包，解压后要先运行 `chmod +x instadeck`。Release 里的压缩包在 Linux 上构建，没有这个问题。
 
-## 许可证
+## 免责声明
 
-暂未选择许可证。在选定之前，本仓库的代码不授予他人使用、修改或分发的权利。
+- **非官方项目：** InstaDeck 是独立的第三方工具，与 InstaBox 及其运营方没有任何关联，也未获得其认可或支持。InstaBox 名称及相关标识归其各自所有者所有。
+- **服务条款：** 是否可以注册和使用多个 InstaBox 账号，由 InstaBox 的服务条款决定。请自行确认你的使用方式符合条款，并自行承担账号受限、被封禁等后果。本项目不鼓励用多个账号规避配额或计费限制。
+- **机器和数据：** 面板通过你提供的 API Key 直接操作真实机器。删除机器和快照等操作无法撤销，开启公开端口会把服务暴露到公网。这些操作可能造成数据丢失或产生费用，请在执行前确认。
+- **密钥安全：** 面板集中保存了多个账号的 API Key。部署环境的安全、数据备份和 Key 的保管都由你负责。
+- **无担保：** 本软件按“原样”提供，不附带任何形式的担保。在法律允许的范围内，作者和贡献者不对使用本软件造成的任何损失承担责任。上游接口变化也可能导致部分功能失效。
+
+## 开源协议
+
+本项目基于 [MIT 协议](LICENSE) 开源。

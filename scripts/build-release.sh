@@ -45,7 +45,7 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; d
   echo "building $name"
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
     -ldflags="-s -w -X main.version=$version" -o "$stage/$binary" ./cmd/instadeck
-  cp README.md "$stage/"
+  cp README.md LICENSE "$stage/"
   cp -R deploy "$stage/"
 
   if [[ "$goos" == "windows" ]]; then

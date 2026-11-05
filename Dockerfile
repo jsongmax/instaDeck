@@ -18,6 +18,7 @@ RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/instadeck /usr/local/bin/instadeck
+COPY LICENSE /usr/share/doc/instadeck/LICENSE
 COPY --from=build --chown=65532:65532 /out/data /data
 USER 65532:65532
 WORKDIR /data
